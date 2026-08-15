@@ -3,27 +3,29 @@ import { X } from "lucide-react";
 import { PAPER, STAMP, todayISO, monthKeyOf } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
 
-export default function AddExpenseSheet({ viewMonth, categories, onClose, onSubmit }) {
+export default function AddExpenseSheet({ viewMonth, categories, initialEntry, onClose, onSubmit }) {
+  const isEdit = !!initialEntry;
   const [date, setDate] = useState(() => {
+    if (initialEntry) return initialEntry.date;
     const t = todayISO();
     return monthKeyOf(t) === viewMonth ? t : `${viewMonth}-01`;
   });
-  const [category, setCategory] = useState(categories[0]?.id || "");
-  const [item, setItem] = useState("");
-  const [price, setPrice] = useState("");
-  const [note, setNote] = useState("");
+  const [category, setCategory] = useState(initialEntry?.category || categories[0]?.id || "");
+  const [item, setItem] = useState(initialEntry?.item || "");
+  const [price, setPrice] = useState(initialEntry ? String(initialEntry.price) : "");
+  const [note, setNote] = useState(initialEntry?.note || "");
 
   const canSubmit = price !== "" && Number(price) > 0 && category;
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit({ date, category, item: item.trim(), price: Number(price), note: note.trim() });
+    onSubmit({ date, category, item: item.trim(), price: Number(price), note: note.trim() }, initialEntry?.id);
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(43,38,32,0.45)", zIndex: 30, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: PAPER, width: "100%", maxWidth: 440, borderRadius: "20px 20px 0 0", padding: "16px 18px 22px", maxHeight: "85vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h2 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 17, fontWeight: 800, margin: 0 }}>新增一筆</h2>
+          <h2 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 17, fontWeight: 800, margin: 0 }}>{isEdit ? "修改這一筆" : "新增一筆"}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#8A8072" }}><X size={20} /></button>
         </div>
 
@@ -57,7 +59,7 @@ export default function AddExpenseSheet({ viewMonth, categories, onClose, onSubm
 
         <button onClick={handleSubmit} disabled={!canSubmit}
           style={{ width: "100%", marginTop: 10, padding: "13px 0", borderRadius: 14, border: "none", background: canSubmit ? STAMP : "#D8CBAE", color: "#fff", fontWeight: 700, fontSize: 15, cursor: canSubmit ? "pointer" : "not-allowed" }}>
-          記一筆
+          {isEdit ? "更新這一筆" : "記一筆"}
         </button>
       </div>
     </div>

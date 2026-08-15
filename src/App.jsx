@@ -86,6 +86,7 @@ export default function App() {
   const [viewMonth, setViewMonth] = useState(monthKeyOf(todayISO()));
   const [tab, setTab] = useState("ledger");
   const [showAdd, setShowAdd] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [editingIncomeSrc, setEditingIncomeSrc] = useState(null);
@@ -138,6 +139,12 @@ export default function App() {
     persist({ expenses: next });
     setConfirmDeleteId(null);
   };
+  const updateExpense = (id, patch) => {
+    const next = expenses.map((e) => (e.id === id ? { ...e, ...patch } : e));
+    setExpenses(next);
+    persist({ expenses: next });
+    setEditingExpense(null);
+  };
   const getIncomeAmount = (month, source) =>
     incomes.find((i) => i.month === month && i.source === source)?.amount || 0;
   const saveIncome = (month, source, amount) => {
@@ -162,6 +169,12 @@ export default function App() {
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   }, []);
 
+  const goHome = useCallback(() => {
+    setTab("ledger");
+    setViewMonth(monthKeyOf(todayISO()));
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  }, []);
+
   const catMap = useMemo(() => catMapOf(categories), [categories]);
   const monthStats = useMemo(() => computeMonthStats(expenses, incomes, categories, viewMonth), [expenses, incomes, categories, viewMonth]);
 
@@ -179,16 +192,20 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: PAPER, color: INK, fontFamily: "'Noto Sans TC', sans-serif", paddingBottom: 96 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
-        .lg-scroll::-webkit-scrollbar { height: 6px; }
+        .lg-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
         .lg-scroll::-webkit-scrollbar-thumb { background: #D8CBAE; border-radius: 4px; }
         button { font-family: inherit; }
         input, select { font-family: inherit; }
+        .app-header, .app-content { max-width: 440px; margin: 0 auto; padding: 0 16px; }
+        @media (min-width: 760px) {
+          .app-content.app-content--wide { max-width: 1120px; }
+        }
       `}</style>
 
-      <div style={{ maxWidth: 440, margin: "0 auto", padding: "0 16px" }}>
+      <div className="app-header">
         <div style={{ position: "sticky", top: 0, zIndex: 15, background: PAPER, paddingTop: 20, paddingBottom: 4 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
-            <button onClick={() => switchTab("ledger")} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }} aria-label="回主頁">
+            <button onClick={goHome} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }} aria-label="回主頁（當月）">
               <h1 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: 1, color: INK }}>生活帳本</h1>
               <p style={{ fontSize: 12, color: "#8A8072", margin: "2px 0 0" }}>{user.email}</p>
             </button>
@@ -196,8 +213,8 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 14, marginBottom: 10 }}>
-            <button onClick={() => switchTab("ledger")} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-              <Home size={13} /> 回主頁
+            <button onClick={goHome} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <Home size={13} /> 回主頁（當月）
             </button>
             <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <SettingsIcon size={13} /> 設定
@@ -243,7 +260,9 @@ export default function App() {
             ))}
           </div>
         </div>
+      </div>
 
+      <div className={`app-content${tab === "stats" ? " app-content--wide" : ""}`}>
         {tab === "ledger" && (
           <LedgerTab
             expenses={expenses} incomes={incomes} categories={categories} catMap={catMap}
@@ -252,10 +271,11 @@ export default function App() {
             editingIncomeSrc={editingIncomeSrc} setEditingIncomeSrc={setEditingIncomeSrc}
             incomeDraft={incomeDraft} setIncomeDraft={setIncomeDraft}
             getIncomeAmount={getIncomeAmount} saveIncome={saveIncome}
+            onEdit={(entry) => setEditingExpense(entry)}
           />
         )}
         {tab === "stats" && (
-          <StatsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={setTab} />
+          <StatsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} />
         )}
         {tab === "charts" && (
           <ChartsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} />
@@ -277,8 +297,12 @@ export default function App() {
         </button>
       )}
 
-      {showAdd && (
-        <AddExpenseSheet viewMonth={viewMonth} categories={categories} onClose={() => setShowAdd(false)} onSubmit={addExpense} />
+      {(showAdd || editingExpense) && (
+        <AddExpenseSheet
+          viewMonth={viewMonth} categories={categories} initialEntry={editingExpense}
+          onClose={() => { setShowAdd(false); setEditingExpense(null); }}
+          onSubmit={(patch, id) => (id ? updateExpense(id, patch) : addExpense(patch))}
+        />
       )}
       {showSettings && (
         <SettingsModal

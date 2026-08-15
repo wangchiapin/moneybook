@@ -5,7 +5,7 @@ import { CatDot, Tile } from "./components.jsx";
 
 export default function LedgerTab({
   expenses, incomes, categories, catMap, monthStats, viewMonth,
-  confirmDeleteId, setConfirmDeleteId, deleteExpense,
+  confirmDeleteId, setConfirmDeleteId, deleteExpense, onEdit,
   editingIncomeSrc, setEditingIncomeSrc, incomeDraft, setIncomeDraft,
   getIncomeAmount, saveIncome,
 }) {
@@ -47,7 +47,7 @@ export default function LedgerTab({
               return (
                 <div
                   key={it.id}
-                  onClick={() => setConfirmDeleteId(confirming ? null : it.id)}
+                  onClick={() => { if (confirming) setConfirmDeleteId(null); else onEdit(it); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 2px", borderBottom: "1px solid #EFE7D4", cursor: "pointer" }}
                 >
                   <CatDot color={cat.color} size={9} />
@@ -55,13 +55,17 @@ export default function LedgerTab({
                     <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.item || cat.name}</div>
                     <div style={{ fontSize: 11, color: "#A79C89" }}>{cat.name}{it.note ? ` · ${it.note}` : ""}</div>
                   </div>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600 }}>${fmt(it.price)}</span>
                   {confirming ? (
                     <button onClick={(e) => { e.stopPropagation(); deleteExpense(it.id); }}
-                      style={{ background: STAMP, color: "#fff", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-                      <Trash2 size={13} /> 刪除
+                      style={{ background: STAMP, color: "#fff", border: "none", borderRadius: 8, padding: "6px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 3, cursor: "pointer", flexShrink: 0 }}>
+                      <Trash2 size={12} /> 確定
                     </button>
                   ) : (
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600 }}>${fmt(it.price)}</span>
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(it.id); }}
+                      style={{ background: "none", border: "none", color: "#D8CBAE", cursor: "pointer", padding: 4, flexShrink: 0 }}>
+                      <Trash2 size={14} />
+                    </button>
                   )}
                 </div>
               );
@@ -70,56 +74,58 @@ export default function LedgerTab({
         ))}
       </div>
 
-      <div style={{ background: "#fff", borderRadius: 16, padding: 14, marginBottom: 14, border: "1px solid #ECE1C9" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>分類明細</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px" }}>
-          {categories.map((c) => (
-            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C5343" }}>
-                <CatDot color={c.color} /> {c.name}
-              </span>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: monthStats.categoryTotals[c.id] ? INK : "#C9BFA9" }}>
-                {fmt(monthStats.categoryTotals[c.id])}
-              </span>
-            </div>
-          ))}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 }}>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>分類明細</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {categories.map((c) => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C5343" }}>
+                  <CatDot color={c.color} /> {c.name}
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: monthStats.categoryTotals[c.id] ? INK : "#C9BFA9" }}>
+                  {fmt(monthStats.categoryTotals[c.id])}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>
-          <PiggyBank size={14} /> 本月收入
-        </div>
-        {INCOME_SOURCES.map((src) => {
-          const amount = getIncomeAmount(viewMonth, src);
-          const editing = editingIncomeSrc === src;
-          return (
-            <div key={src} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", fontSize: 13, borderBottom: "1px solid #F3ECDA" }}>
-              <span style={{ color: "#5C5343" }}>{src}</span>
-              {editing ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input
-                    type="number" autoFocus defaultValue={amount || ""}
-                    onChange={(e) => setIncomeDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") saveIncome(viewMonth, src, Number(incomeDraft || 0)); }}
-                    style={{ width: 90, border: "1px solid #D8CBAE", borderRadius: 8, padding: "4px 8px", fontSize: 13, textAlign: "right", fontFamily: "'JetBrains Mono', monospace" }}
-                  />
-                  <button onClick={() => saveIncome(viewMonth, src, Number(incomeDraft || 0))} style={{ background: GOOD, border: "none", color: "#fff", borderRadius: 6, padding: 5, cursor: "pointer" }}>
-                    <Check size={13} />
+        <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>
+            <PiggyBank size={14} /> 本月收入
+          </div>
+          {INCOME_SOURCES.map((src) => {
+            const amount = getIncomeAmount(viewMonth, src);
+            const editing = editingIncomeSrc === src;
+            return (
+              <div key={src} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", fontSize: 13, borderBottom: "1px solid #F3ECDA" }}>
+                <span style={{ color: "#5C5343" }}>{src}</span>
+                {editing ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="number" autoFocus defaultValue={amount || ""}
+                      onChange={(e) => setIncomeDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveIncome(viewMonth, src, Number(incomeDraft || 0)); }}
+                      style={{ width: 80, border: "1px solid #D8CBAE", borderRadius: 8, padding: "4px 6px", fontSize: 13, textAlign: "right", fontFamily: "'JetBrains Mono', monospace" }}
+                    />
+                    <button onClick={() => saveIncome(viewMonth, src, Number(incomeDraft || 0))} style={{ background: GOOD, border: "none", color: "#fff", borderRadius: 6, padding: 5, cursor: "pointer" }}>
+                      <Check size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setEditingIncomeSrc(src); setIncomeDraft(String(amount || "")); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
+                    ${fmt(amount)} <Pencil size={11} color="#B8AC91" />
                   </button>
-                </div>
-              ) : (
-                <button onClick={() => { setEditingIncomeSrc(src); setIncomeDraft(String(amount || "")); }}
-                  style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
-                  ${fmt(amount)} <Pencil size={11} color="#B8AC91" />
-                </button>
-              )}
-            </div>
-          );
-        })}
-        <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, fontSize: 13, fontWeight: 700 }}>
-          <span>共計</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: GOOD }}>${fmt(monthStats.incomeTotal)}</span>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, fontSize: 13, fontWeight: 700 }}>
+            <span>共計</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: GOOD }}>${fmt(monthStats.incomeTotal)}</span>
+          </div>
         </div>
       </div>
     </div>

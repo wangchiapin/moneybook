@@ -39,6 +39,13 @@ export default function ChartsTab({ expenses, incomes, categories, viewMonth }) 
     });
   }, [expenses, incomes, categories, effectiveLineYear]);
 
+  const allTimeData = useMemo(() => {
+    return availableMonths.map((mk) => {
+      const s = computeMonthStats(expenses, incomes, categories, mk);
+      return { name: `${twYear(mk.split("-")[0])}/${Number(mk.split("-")[1])}`, 支出: s.netExpense, 收入: s.incomeTotal };
+    });
+  }, [availableMonths, expenses, incomes, categories]);
+
   const selectStyle = { border: "1px solid #E0D5BC", borderRadius: 10, padding: "6px 10px", fontSize: 13, background: "#fff", color: "#2B2620" };
 
   return (
@@ -91,6 +98,26 @@ export default function ChartsTab({ expenses, incomes, categories, viewMonth }) 
             </LineChart>
           </ResponsiveContainer>
         </div>
+      </div>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", letterSpacing: 1, marginBottom: 10 }}>全期間每月收支趨勢（有資料以來）</div>
+        {allTimeData.length < 2 ? (
+          <div style={{ textAlign: "center", padding: "30px 0", color: "#A79C89", fontSize: 13 }}>資料還太少，累積幾個月後這裡會出現趨勢圖</div>
+        ) : (
+          <div style={{ width: "100%", height: 220 }}>
+            <ResponsiveContainer>
+              <LineChart data={allTimeData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid vertical={false} stroke="#EFE7D4" />
+                <XAxis dataKey="name" tick={{ fontSize: 9.5, fill: "#8A8072" }} axisLine={false} tickLine={false} interval={Math.max(0, Math.ceil(allTimeData.length / 10) - 1)} />
+                <YAxis tick={{ fontSize: 10, fill: "#8A8072" }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: "1px solid #ECE1C9" }} formatter={(v) => `$${fmt(v)}`} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line type="monotone" dataKey="支出" stroke={STAMP} strokeWidth={2} dot={{ r: 2 }} />
+                <Line type="monotone" dataKey="收入" stroke={GOOD} strokeWidth={2} dot={{ r: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );

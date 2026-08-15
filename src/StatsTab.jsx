@@ -23,10 +23,16 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
 
   return (
     <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #ECE1C9", overflow: "hidden" }}>
+      <style>{`
+        .stats-scroll { overflow: auto; max-height: 480px; }
+        @media (min-width: 760px) {
+          .stats-scroll { overflow: visible; max-height: none; }
+        }
+      `}</style>
       <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", padding: "12px 14px 6px", letterSpacing: 1 }}>
         逐月統計（比照原 Excel「統計」表，點任一列可跳到該月記帳）
       </div>
-      <div className="lg-scroll" style={{ overflow: "auto", maxHeight: 480, padding: "0 4px 12px" }}>
+      <div className="lg-scroll stats-scroll" style={{ padding: "0 4px 12px" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 11.5, minWidth: 720 }}>
           <thead>
             <tr>
