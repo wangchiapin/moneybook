@@ -84,11 +84,16 @@ export default function SettingsModal({
   };
 
   // ---- import: legacy multi-sheet-per-month excel (original spreadsheet format) ----
+  // Note: in the original workbook, the 日期 (date) cell is merged down across every
+  // entry belonging to the same day, so only the first row of each day actually carries
+  // a date value — every other row's date cell is blank. We forward-fill the last seen
+  // date so those rows aren't silently dropped.
   const importLegacy = async (file) => {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array", cellDates: true });
     const newExpenses = [];
     const newIncomes = [];
+    let skipped = 0;
     wb.SheetNames.forEach((sheetName) => {
       const m = sheetName.match(/^(\d+)-(\d+)\s*月$/);
       if (!m) return;
@@ -96,24 +101,29 @@ export default function SettingsModal({
       const monthKey = `${gregYear}-${String(Number(m[2])).padStart(2, "0")}`;
       const sheet = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+      let lastDate = null;
       rows.forEach((row) => {
         const dateCell = row[0];
+        if (dateCell) {
+          const iso = normalizeDate(dateCell);
+          if (iso) lastDate = iso;
+        }
         const cat = row[1];
         const item = row[2];
-        const price = row[3];
-        if (dateCell && cat && typeof price === "number" && price > 0) {
-          const iso = normalizeDate(dateCell);
-          if (iso) {
-            newExpenses.push({
-              id: genId(), date: iso, category: String(cat).trim(),
-              item: item ? String(item).trim() : "", price: Number(price),
-              note: row[5] ? String(row[5]).trim() : "",
-            });
-          }
+        const price = toNumber(row[3]);
+        const isRealCategory = typeof cat === "string" && cat.trim() && !["總計", "小計", "扣掉卡費", "收入", "收支損益"].includes(cat.trim());
+        if (lastDate && isRealCategory && price !== null && price > 0) {
+          newExpenses.push({
+            id: genId(), date: lastDate, category: cat.trim(),
+            item: item !== undefined && item !== null ? String(item).trim() : "", price,
+            note: row[5] ? String(row[5]).trim() : "",
+          });
+        } else if (dateCell && isRealCategory && price === null) {
+          skipped += 1;
         }
         const incLabel = row[7];
-        const incAmount = row[8];
-        if (INCOME_SOURCES.includes(incLabel) && typeof incAmount === "number" && incAmount > 0) {
+        const incAmount = toNumber(row[8]);
+        if (INCOME_SOURCES.includes(incLabel) && incAmount !== null && incAmount > 0) {
           newIncomes.push({ id: genId(), month: monthKey, source: incLabel, amount: incAmount });
         }
       });
@@ -121,7 +131,7 @@ export default function SettingsModal({
     const nextExpenses = [...expenses, ...newExpenses];
     const nextIncomes = [...incomes, ...newIncomes];
     setDataPersist(nextExpenses, nextIncomes);
-    setImportMsg(`從舊版 Excel 匯入了 ${newExpenses.length} 筆支出、${newIncomes.length} 筆收入`);
+    setImportMsg(`從舊版 Excel 匯入了 ${newExpenses.length} 筆支出、${newIncomes.length} 筆收入${skipped ? `（${skipped} 筆金額欄位無法辨識，已略過）` : ""}`);
   };
 
   const clearAll = () => {
@@ -224,6 +234,12 @@ export default function SettingsModal({
       </div>
     </div>
   );
+}
+
+function toNumber(cell) {
+  if (typeof cell === "number" && !Number.isNaN(cell)) return cell;
+  if (typeof cell === "string" && cell.trim() !== "" && !Number.isNaN(Number(cell))) return Number(cell);
+  return null;
 }
 
 function normalizeDate(cell) {

@@ -29,7 +29,7 @@ export default function LedgerTab({
         <Tile label="收入合計" value={monthStats.incomeTotal} color={GOOD} />
       </div>
 
-      <div style={{ marginBottom: 18 }}>
+      <div className="lg-scroll" style={{ marginBottom: 18, maxHeight: 440, overflowY: "auto", paddingRight: 4 }}>
         {monthGroups.length === 0 && (
           <div style={{ textAlign: "center", padding: "36px 0", color: "#A79C89", fontSize: 13 }}>
             本月尚無紀錄，點右下角「＋」開始記帳

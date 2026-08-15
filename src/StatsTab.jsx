@@ -18,7 +18,7 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
       const y = twYear(mk.split("-")[0]);
       (byYear[y] = byYear[y] || []).push(mk);
     });
-    return Object.keys(byYear).sort((a, b) => a - b).map((y) => ({ year: y, months: byYear[y].sort() }));
+    return Object.keys(byYear).sort((a, b) => b - a).map((y) => ({ year: y, months: byYear[y].sort().reverse() }));
   }, [allMonths]);
 
   return (
@@ -26,16 +26,16 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
       <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", padding: "12px 14px 6px", letterSpacing: 1 }}>
         逐月統計（比照原 Excel「統計」表，點任一列可跳到該月記帳）
       </div>
-      <div className="lg-scroll" style={{ overflowX: "auto", padding: "0 4px 12px" }}>
+      <div className="lg-scroll" style={{ overflow: "auto", maxHeight: 480, padding: "0 4px 12px" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 11.5, minWidth: 720 }}>
           <thead>
             <tr>
-              <th style={thStyle}>月份</th>
-              {categories.map((c) => (<th key={c.id} style={{ ...thStyle, color: c.color }}>{c.id}</th>))}
-              <th style={thStyle}>總計</th>
-              <th style={thStyle}>扣卡費</th>
-              <th style={thStyle}>收入</th>
-              <th style={thStyle}>收支損益</th>
+              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 2 }}>月份</th>
+              {categories.map((c) => (<th key={c.id} style={{ ...thStyle, color: c.color, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>{c.id}</th>))}
+              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>總計</th>
+              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>扣卡費</th>
+              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>收入</th>
+              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>收支損益</th>
             </tr>
           </thead>
           <tbody>

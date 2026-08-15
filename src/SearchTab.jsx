@@ -79,7 +79,7 @@ export default function SearchTab({ expenses, categories, catMap }) {
             </div>
           )}
 
-          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #ECE1C9", overflow: "hidden" }}>
+          <div className="lg-scroll" style={{ background: "#fff", borderRadius: 16, border: "1px solid #ECE1C9", maxHeight: 460, overflowY: "auto" }}>
             {results.length === 0 ? (
               <div style={{ textAlign: "center", padding: "30px 0", color: "#A79C89", fontSize: 13 }}>沒有符合的紀錄</div>
             ) : (

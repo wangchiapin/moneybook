@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Plus, ChevronLeft, ChevronRight, BarChart3, BookText,
-  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut,
+  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut, Home,
 } from "lucide-react";
 import { auth, db } from "./firebase.js";
 import {
@@ -157,6 +157,11 @@ export default function App() {
     persist({ expenses: nextExpenses, incomes: nextIncomes });
   };
 
+  const switchTab = useCallback((key) => {
+    setTab(key);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  }, []);
+
   const catMap = useMemo(() => catMapOf(categories), [categories]);
   const monthStats = useMemo(() => computeMonthStats(expenses, incomes, categories, viewMonth), [expenses, incomes, categories, viewMonth]);
 
@@ -180,58 +185,63 @@ export default function App() {
         input, select { font-family: inherit; }
       `}</style>
 
-      <div style={{ maxWidth: 440, margin: "0 auto", padding: "20px 16px 0" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
-          <div>
-            <h1 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: 1 }}>生活帳本</h1>
-            <p style={{ fontSize: 12, color: "#8A8072", margin: "2px 0 0" }}>{user.email}</p>
-          </div>
-          <StampBadge value={monthStats.balance} size={86} />
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 14, marginBottom: 10 }}>
-          <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-            <SettingsIcon size={13} /> 設定
-          </button>
-          <button onClick={() => signOut(auth)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-            <LogOut size={13} /> 登出
-          </button>
-        </div>
-
-        {saveError && (
-          <div style={{ background: "#F7E3D9", border: "1px solid #E0B49A", borderRadius: 10, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
-            雲端同步時發生問題，請確認網路連線或 Firebase 設定。
-          </div>
-        )}
-
-        <div style={{ background: PAPER_DEEP, borderRadius: 16, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <button onClick={() => setViewMonth((m) => shiftMonth(m, -1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }}>
-            <ChevronLeft size={20} />
-          </button>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 16 }}>{tw}</div>
-            <div style={{ fontSize: 11, color: "#8A8072", fontFamily: "'JetBrains Mono', monospace" }}>{greg}</div>
-          </div>
-          <button onClick={() => setViewMonth((m) => shiftMonth(m, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }}>
-            <ChevronRight size={20} />
-          </button>
-        </div>
-
-        <div style={{ display: "flex", background: PAPER_DEEP, borderRadius: 999, padding: 4, marginBottom: 16, gap: 4 }}>
-          {TABS.map(([key, label, Icon]) => (
-            <button key={key} onClick={() => setTab(key)}
-              style={{
-                flex: 1, border: "none", cursor: "pointer", padding: "9px 0", borderRadius: 999,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                background: tab === key ? "#FFFFFF" : "transparent",
-                color: tab === key ? STAMP : "#8A8072",
-                fontWeight: tab === key ? 700 : 500, fontSize: 12,
-                boxShadow: tab === key ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-                transition: "all .15s",
-              }}>
-              <Icon size={14} /> {label}
+      <div style={{ maxWidth: 440, margin: "0 auto", padding: "0 16px" }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 15, background: PAPER, paddingTop: 20, paddingBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+            <button onClick={() => switchTab("ledger")} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }} aria-label="回主頁">
+              <h1 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: 1, color: INK }}>生活帳本</h1>
+              <p style={{ fontSize: 12, color: "#8A8072", margin: "2px 0 0" }}>{user.email}</p>
             </button>
-          ))}
+            <StampBadge value={monthStats.balance} size={86} />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 14, marginBottom: 10 }}>
+            <button onClick={() => switchTab("ledger")} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <Home size={13} /> 回主頁
+            </button>
+            <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <SettingsIcon size={13} /> 設定
+            </button>
+            <button onClick={() => signOut(auth)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <LogOut size={13} /> 登出
+            </button>
+          </div>
+
+          {saveError && (
+            <div style={{ background: "#F7E3D9", border: "1px solid #E0B49A", borderRadius: 10, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
+              雲端同步時發生問題，請確認網路連線或 Firebase 設定。
+            </div>
+          )}
+
+          <div style={{ background: PAPER_DEEP, borderRadius: 16, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <button onClick={() => setViewMonth((m) => shiftMonth(m, -1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }}>
+              <ChevronLeft size={20} />
+            </button>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 16 }}>{tw}</div>
+              <div style={{ fontSize: 11, color: "#8A8072", fontFamily: "'JetBrains Mono', monospace" }}>{greg}</div>
+            </div>
+            <button onClick={() => setViewMonth((m) => shiftMonth(m, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }}>
+              <ChevronRight size={20} />
+            </button>
+          </div>
+
+          <div style={{ display: "flex", background: PAPER_DEEP, borderRadius: 999, padding: 4, marginBottom: 10, gap: 4 }}>
+            {TABS.map(([key, label, Icon]) => (
+              <button key={key} onClick={() => switchTab(key)}
+                style={{
+                  flex: 1, border: "none", cursor: "pointer", padding: "9px 0", borderRadius: 999,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  background: tab === key ? "#FFFFFF" : "transparent",
+                  color: tab === key ? STAMP : "#8A8072",
+                  fontWeight: tab === key ? 700 : 500, fontSize: 12,
+                  boxShadow: tab === key ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                  transition: "all .15s",
+                }}>
+                <Icon size={14} /> {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {tab === "ledger" && (
