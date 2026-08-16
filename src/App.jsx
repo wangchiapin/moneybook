@@ -273,7 +273,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className={`app-content${tab === "stats" ? " app-content--wide" : ""}`}>
+      <div className={`app-content${(tab === "stats" || tab === "ledger") ? " app-content--wide" : ""}`}>
         {tab === "ledger" && (
           <LedgerTab
             expenses={expenses} incomes={incomes} categories={categories} catMap={catMap}

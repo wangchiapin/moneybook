@@ -23,59 +23,27 @@ export default function LedgerTab({
 
   return (
     <div>
+      <style>{`
+        .ledger-3col { display: flex; flex-direction: column; gap: 14px; }
+        .ledger-3col .col-entries { order: 1; }
+        .ledger-3col .col-category { order: 2; }
+        .ledger-3col .col-income { order: 3; }
+        @media (min-width: 760px) {
+          .ledger-3col { display: grid; grid-template-columns: 1fr 1.3fr 1fr; align-items: start; }
+          .ledger-3col .col-category { order: 1; }
+          .ledger-3col .col-entries { order: 2; }
+          .ledger-3col .col-income { order: 3; }
+        }
+      `}</style>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
         <Tile label="支出總計" value={monthStats.total} color={INK} />
         <Tile label="扣卡費" value={monthStats.netExpense} color={INK} />
         <Tile label="收入合計" value={monthStats.incomeTotal} color={GOOD} />
       </div>
 
-      <div className="lg-scroll" style={{ marginBottom: 18, maxHeight: 440, overflowY: "auto", paddingRight: 4 }}>
-        {monthGroups.length === 0 && (
-          <div style={{ textAlign: "center", padding: "36px 0", color: "#A79C89", fontSize: 13 }}>
-            本月尚無紀錄，點右下角「＋」開始記帳
-          </div>
-        )}
-        {monthGroups.map((g) => (
-          <div key={g.date} style={{ marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "0 2px 6px", borderBottom: `1px solid #E0D5BC` }}>
-              <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'Noto Serif TC', serif" }}>{dateLabel(g.date)}</span>
-              <span style={{ fontSize: 12, color: "#8A8072", fontFamily: "'JetBrains Mono', monospace" }}>小計 ${fmt(g.subtotal)}</span>
-            </div>
-            {g.items.map((it) => {
-              const cat = catMap[it.category] || { name: it.category, color: "#999" };
-              const confirming = confirmDeleteId === it.id;
-              return (
-                <div
-                  key={it.id}
-                  onClick={() => { if (confirming) setConfirmDeleteId(null); else onEdit(it); }}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 2px", borderBottom: "1px solid #EFE7D4", cursor: "pointer" }}
-                >
-                  <CatDot color={cat.color} size={9} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.item || cat.name}</div>
-                    <div style={{ fontSize: 11, color: "#A79C89" }}>{cat.name}{it.note ? ` · ${it.note}` : ""}</div>
-                  </div>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600 }}>${fmt(it.price)}</span>
-                  {confirming ? (
-                    <button onClick={(e) => { e.stopPropagation(); deleteExpense(it.id); }}
-                      style={{ background: STAMP, color: "#fff", border: "none", borderRadius: 8, padding: "6px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 3, cursor: "pointer", flexShrink: 0 }}>
-                      <Trash2 size={12} /> 確定
-                    </button>
-                  ) : (
-                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(it.id); }}
-                      style={{ background: "none", border: "none", color: "#D8CBAE", cursor: "pointer", padding: 4, flexShrink: 0 }}>
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 }}>
-        <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
+      <div className="ledger-3col">
+        <div className="col-category" style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>分類明細</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {categories.map((c) => (
@@ -91,7 +59,53 @@ export default function LedgerTab({
           </div>
         </div>
 
-        <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
+        <div className="col-entries lg-scroll" style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9", maxHeight: 560, overflowY: "auto" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>每日支出狀況</div>
+          {monthGroups.length === 0 && (
+            <div style={{ textAlign: "center", padding: "36px 0", color: "#A79C89", fontSize: 13 }}>
+              本月尚無紀錄，點右下角「＋」開始記帳
+            </div>
+          )}
+          {monthGroups.map((g) => (
+            <div key={g.date} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "0 2px 6px", borderBottom: `1px solid #E0D5BC` }}>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'Noto Serif TC', serif" }}>{dateLabel(g.date)}</span>
+                <span style={{ fontSize: 12, color: "#8A8072", fontFamily: "'JetBrains Mono', monospace" }}>小計 ${fmt(g.subtotal)}</span>
+              </div>
+              {g.items.map((it) => {
+                const cat = catMap[it.category] || { name: it.category, color: "#999" };
+                const confirming = confirmDeleteId === it.id;
+                return (
+                  <div
+                    key={it.id}
+                    onClick={() => { if (confirming) setConfirmDeleteId(null); else onEdit(it); }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 2px", borderBottom: "1px solid #EFE7D4", cursor: "pointer" }}
+                  >
+                    <CatDot color={cat.color} size={9} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.item || cat.name}</div>
+                      <div style={{ fontSize: 11, color: "#A79C89" }}>{cat.name}{it.note ? ` · ${it.note}` : ""}</div>
+                    </div>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600 }}>${fmt(it.price)}</span>
+                    {confirming ? (
+                      <button onClick={(e) => { e.stopPropagation(); deleteExpense(it.id); }}
+                        style={{ background: STAMP, color: "#fff", border: "none", borderRadius: 8, padding: "6px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 3, cursor: "pointer", flexShrink: 0 }}>
+                        <Trash2 size={12} /> 確定
+                      </button>
+                    ) : (
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(it.id); }}
+                        style={{ background: "none", border: "none", color: "#D8CBAE", cursor: "pointer", padding: 4, flexShrink: 0 }}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        <div className="col-income" style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>
             <PiggyBank size={14} /> 本月收入
           </div>
