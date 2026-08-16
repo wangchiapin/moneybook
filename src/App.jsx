@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Plus, ChevronLeft, ChevronRight, BarChart3, BookText,
-  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut, Home,
+  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut, Home, Sparkles,
 } from "lucide-react";
 import { auth, db } from "./firebase.js";
 import {
@@ -19,8 +19,11 @@ import LedgerTab from "./LedgerTab.jsx";
 import StatsTab from "./StatsTab.jsx";
 import ChartsTab from "./ChartsTab.jsx";
 import SearchTab from "./SearchTab.jsx";
+import AITab from "./AITab.jsx";
 import AddExpenseSheet from "./AddExpenseSheet.jsx";
 import SettingsModal from "./SettingsModal.jsx";
+
+const DEFAULT_AI_SETTINGS = { apiKey: "", model: "gemini-flash-latest" };
 
 // ---------- login screen ----------
 
@@ -75,6 +78,7 @@ const TABS = [
   ["stats", "統計", BarChart3],
   ["charts", "圖表", LineChartIcon],
   ["search", "搜尋", SearchIcon],
+  ["ai", "AI", Sparkles],
 ];
 
 export default function App() {
@@ -82,12 +86,14 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [aiSettings, setAiSettings] = useState(DEFAULT_AI_SETTINGS);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [viewMonth, setViewMonth] = useState(monthKeyOf(todayISO()));
   const [tab, setTab] = useState("ledger");
   const [showAdd, setShowAdd] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsSection, setSettingsSection] = useState("categories");
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [editingIncomeSrc, setEditingIncomeSrc] = useState(null);
   const [incomeDraft, setIncomeDraft] = useState("");
@@ -106,6 +112,7 @@ export default function App() {
         setExpenses(data.expenses || []);
         setIncomes(data.incomes || []);
         setCategories(data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES);
+        setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
         if (!initializedMonth.current && (data.expenses || []).length) {
           const dates = data.expenses.map((e) => e.date).sort();
           setViewMonth(monthKeyOf(dates[dates.length - 1]));
@@ -157,6 +164,10 @@ export default function App() {
   const setCategoriesPersist = (next) => {
     setCategories(next);
     persist({ categories: next });
+  };
+  const setAiSettingsPersist = (next) => {
+    setAiSettings(next);
+    persist({ ai: next });
   };
   const setDataPersist = (nextExpenses, nextIncomes) => {
     setExpenses(nextExpenses);
@@ -216,7 +227,7 @@ export default function App() {
             <button onClick={goHome} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <Home size={13} /> 回主頁（當月）
             </button>
-            <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <button onClick={() => { setSettingsSection("categories"); setShowSettings(true); }} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <SettingsIcon size={13} /> 設定
             </button>
             <button onClick={() => signOut(auth)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
@@ -283,6 +294,13 @@ export default function App() {
         {tab === "search" && (
           <SearchTab expenses={expenses} categories={categories} catMap={catMap} />
         )}
+        {tab === "ai" && (
+          <AITab
+            expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth}
+            aiSettings={aiSettings}
+            onOpenSettings={() => { setSettingsSection("ai"); setShowSettings(true); }}
+          />
+        )}
       </div>
 
       {tab === "ledger" && (
@@ -308,6 +326,8 @@ export default function App() {
         <SettingsModal
           categories={categories} setCategoriesPersist={setCategoriesPersist}
           expenses={expenses} incomes={incomes} setDataPersist={setDataPersist}
+          aiSettings={aiSettings} setAiSettingsPersist={setAiSettingsPersist}
+          initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
         />
       )}

@@ -9,14 +9,19 @@ const PALETTE = ["#C1622D", "#B4637A", "#2F6F62", "#4A6FA5", "#A97C50", "#7B5E7B
 export default function SettingsModal({
   categories, setCategoriesPersist,
   expenses, incomes, setDataPersist,
+  aiSettings, setAiSettingsPersist,
+  initialSection,
   onClose,
 }) {
-  const [section, setSection] = useState("categories"); // categories | data
+  const [section, setSection] = useState(initialSection || "categories"); // categories | data | ai
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
   const [deleteBlocked, setDeleteBlocked] = useState(null);
   const [importMsg, setImportMsg] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [keyDraft, setKeyDraft] = useState(aiSettings?.apiKey || "");
+  const [modelDraft, setModelDraft] = useState(aiSettings?.model || "gemini-flash-latest");
+  const [keySaved, setKeySaved] = useState(false);
   const backupFileRef = useRef(null);
   const legacyFileRef = useRef(null);
 
@@ -141,6 +146,12 @@ export default function SettingsModal({
     setImportMsg("已清空所有記帳資料");
   };
 
+  const saveAISettings = () => {
+    setAiSettingsPersist({ apiKey: keyDraft.trim(), model: modelDraft.trim() || "gemini-flash-latest" });
+    setKeySaved(true);
+    setTimeout(() => setKeySaved(false), 2000);
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(43,38,32,0.45)", zIndex: 40, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: PAPER, width: "100%", maxWidth: 440, borderRadius: "20px 20px 0 0", padding: "16px 18px 26px", maxHeight: "85vh", overflowY: "auto" }}>
@@ -150,7 +161,7 @@ export default function SettingsModal({
         </div>
 
         <div style={{ display: "flex", background: "#EDE4D0", borderRadius: 999, padding: 4, marginBottom: 16, gap: 4 }}>
-          {[["categories", "分類管理"], ["data", "備份與匯入"]].map(([key, label]) => (
+          {[["categories", "分類管理"], ["data", "備份與匯入"], ["ai", "AI 分析"]].map(([key, label]) => (
             <button key={key} onClick={() => setSection(key)}
               style={{
                 flex: 1, border: "none", cursor: "pointer", padding: "8px 0", borderRadius: 999,
@@ -229,6 +240,31 @@ export default function SettingsModal({
                 {confirmClear ? "再按一次確定清空所有資料" : "清空所有記帳資料"}
               </button>
             </div>
+          </div>
+        )}
+
+        {section === "ai" && (
+          <div>
+            <div style={{ fontSize: 12, color: "#8A8072", lineHeight: 1.6, marginBottom: 14 }}>
+              到 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: STAMP }}>Google AI Studio</a> 免費申請一組 API 金鑰貼在這裡，就能在「AI 分析」分頁請 Gemini 幫你看支出、給建議。申請時建議把金鑰限制成只能從你的網站網域呼叫，比較安全。
+            </div>
+            <label style={{ display: "block", fontSize: 11.5, color: "#8A8072", fontWeight: 700, marginBottom: 6 }}>Gemini API 金鑰</label>
+            <input
+              type="text" placeholder="AIzaSy..." value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E0D5BC", borderRadius: 10, padding: "9px 12px", fontSize: 13, marginBottom: 12, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+            <label style={{ display: "block", fontSize: 11.5, color: "#8A8072", fontWeight: 700, marginBottom: 6 }}>模型名稱</label>
+            <input
+              type="text" placeholder="gemini-flash-latest" value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E0D5BC", borderRadius: 10, padding: "9px 12px", fontSize: 13, marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+            <div style={{ fontSize: 11, color: "#A79C89", marginBottom: 14 }}>如果之後 Google 改了免費模型名稱，改這裡就好，不用改程式。</div>
+            <button onClick={saveAISettings}
+              style={{ width: "100%", padding: "12px 0", borderRadius: 12, border: "none", background: keySaved ? GOOD : STAMP, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              {keySaved ? "已儲存" : "儲存設定"}
+            </button>
           </div>
         )}
       </div>
