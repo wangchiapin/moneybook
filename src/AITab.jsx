@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Sparkles, Settings as SettingsIcon, RefreshCw } from "lucide-react";
 import { STAMP, GOOD, twYear, fmt, computeMonthStats, monthKeyOf } from "./lib.js";
+import { callGeminiText } from "./gemini.js";
 
 const RANGES = [
   ["month", "本月"],
@@ -72,18 +73,7 @@ ${lines || "（此期間尚無支出紀錄）"}
 3. 2-3 個具體、可執行的省錢或理財建議
 語氣自然、口語一點，不要用制式的顧問腔，也不要條列出「以上僅供參考」這種免責聲明。`;
 
-      const model = (aiSettings.model || "gemini-flash-latest").trim();
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": aiSettings.apiKey.trim() },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error?.message || `請求失敗（狀態碼 ${res.status}）`);
-      }
-      const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
-      if (!text) throw new Error("沒有收到回應內容，請稍後再試一次。");
+      const text = await callGeminiText(aiSettings.apiKey, aiSettings.model, prompt);
       setResult(text);
     } catch (e) {
       setError(e.message || "發生未知錯誤");

@@ -87,6 +87,7 @@ export default function App() {
   const [incomes, setIncomes] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [aiSettings, setAiSettings] = useState(DEFAULT_AI_SETTINGS);
+  const [monthlyNotes, setMonthlyNotes] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [viewMonth, setViewMonth] = useState(monthKeyOf(todayISO()));
   const [tab, setTab] = useState("ledger");
@@ -113,6 +114,7 @@ export default function App() {
         setIncomes(data.incomes || []);
         setCategories(data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES);
         setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
+        setMonthlyNotes(data.monthlyNotes || []);
         if (!initializedMonth.current && (data.expenses || []).length) {
           const dates = data.expenses.map((e) => e.date).sort();
           setViewMonth(monthKeyOf(dates[dates.length - 1]));
@@ -173,6 +175,23 @@ export default function App() {
     setExpenses(nextExpenses);
     setIncomes(nextIncomes);
     persist({ expenses: nextExpenses, incomes: nextIncomes });
+  };
+
+  const addMonthlyNote = (month, text) => {
+    if (!text.trim()) return;
+    const next = [...monthlyNotes, { id: genId(), month, text: text.trim(), createdAt: Date.now() }];
+    setMonthlyNotes(next);
+    persist({ monthlyNotes: next });
+  };
+  const updateMonthlyNote = (id, text) => {
+    const next = monthlyNotes.map((n) => (n.id === id ? { ...n, text: text.trim() } : n));
+    setMonthlyNotes(next);
+    persist({ monthlyNotes: next });
+  };
+  const deleteMonthlyNote = (id) => {
+    const next = monthlyNotes.filter((n) => n.id !== id);
+    setMonthlyNotes(next);
+    persist({ monthlyNotes: next });
   };
 
   const switchTab = useCallback((key) => {
@@ -283,10 +302,12 @@ export default function App() {
             incomeDraft={incomeDraft} setIncomeDraft={setIncomeDraft}
             getIncomeAmount={getIncomeAmount} saveIncome={saveIncome}
             onEdit={(entry) => setEditingExpense(entry)}
+            monthlyNotes={monthlyNotes} addMonthlyNote={addMonthlyNote}
+            updateMonthlyNote={updateMonthlyNote} deleteMonthlyNote={deleteMonthlyNote}
           />
         )}
         {tab === "stats" && (
-          <StatsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} />
+          <StatsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} monthlyNotes={monthlyNotes} />
         )}
         {tab === "charts" && (
           <ChartsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} />
@@ -317,7 +338,7 @@ export default function App() {
 
       {(showAdd || editingExpense) && (
         <AddExpenseSheet
-          viewMonth={viewMonth} categories={categories} initialEntry={editingExpense}
+          viewMonth={viewMonth} categories={categories} initialEntry={editingExpense} aiSettings={aiSettings}
           onClose={() => { setShowAdd(false); setEditingExpense(null); }}
           onSubmit={(patch, id) => (id ? updateExpense(id, patch) : addExpense(patch))}
         />

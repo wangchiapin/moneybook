@@ -1,9 +1,13 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { StickyNote } from "lucide-react";
 import { GOOD, STAMP, PAPER_DEEP, twYear, fmt, computeMonthStats } from "./lib.js";
 import { thStyle, tdStyle } from "./components.jsx";
 
-export default function StatsTab({ expenses, incomes, categories, viewMonth, setViewMonth, setTab }) {
+export default function StatsTab({ expenses, incomes, categories, viewMonth, setViewMonth, setTab, monthlyNotes }) {
   const statsFor = (month) => computeMonthStats(expenses, incomes, categories, month);
+  const [expandedMonth, setExpandedMonth] = useState(null);
+
+  const notesFor = (month) => (monthlyNotes || []).filter((n) => n.month === month);
 
   const allMonths = useMemo(() => {
     const set = new Set(expenses.map((e) => e.date.slice(0, 7)));
@@ -37,9 +41,10 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
           <thead>
             <tr>
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 2 }}>月份</th>
+              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1, textAlign: "center" }}>備註</th>
               {categories.map((c) => (<th key={c.id} style={{ ...thStyle, color: c.color, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>{c.id}</th>))}
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>總計</th>
-              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>扣卡費</th>
+              <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>支出總計－卡費</th>
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>收入</th>
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>收支損益</th>
             </tr>
@@ -50,19 +55,44 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
                 {yg.months.map((mk) => {
                   const s = statsFor(mk);
                   const active = mk === viewMonth;
+                  const notes = notesFor(mk);
+                  const expanded = expandedMonth === mk;
                   return (
-                    <tr key={mk} onClick={() => { setViewMonth(mk); setTab("ledger"); }} style={{ cursor: "pointer", background: active ? "#FBF3E4" : "transparent" }}>
-                      <td style={{ ...tdStyle, fontWeight: 700, position: "sticky", left: 0, background: active ? "#FBF3E4" : "#fff" }}>{Number(mk.split("-")[1])}月</td>
-                      {categories.map((c) => (<td key={c.id} style={tdStyle}>{s.categoryTotals[c.id] ? fmt(s.categoryTotals[c.id]) : "－"}</td>))}
-                      <td style={{ ...tdStyle, fontWeight: 700 }}>{fmt(s.total)}</td>
-                      <td style={tdStyle}>{fmt(s.netExpense)}</td>
-                      <td style={{ ...tdStyle, color: GOOD }}>{s.incomeTotal ? fmt(s.incomeTotal) : "－"}</td>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: s.balance >= 0 ? GOOD : STAMP }}>{s.balance >= 0 ? "+" : ""}{fmt(s.balance)}</td>
-                    </tr>
+                    <React.Fragment key={mk}>
+                      <tr onClick={() => { setViewMonth(mk); setTab("ledger"); }} style={{ cursor: "pointer", background: active ? "#FBF3E4" : "transparent" }}>
+                        <td style={{ ...tdStyle, fontWeight: 700, position: "sticky", left: 0, background: active ? "#FBF3E4" : "#fff" }}>{Number(mk.split("-")[1])}月</td>
+                        <td style={{ ...tdStyle, textAlign: "center" }}>
+                          {notes.length > 0 && (
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedMonth(expanded ? null : mk); }}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: STAMP, padding: 2, display: "inline-flex" }}
+                              title={`${notes.length} 則備註`}>
+                              <StickyNote size={13} fill={expanded ? STAMP : "none"} />
+                            </button>
+                          )}
+                        </td>
+                        {categories.map((c) => (<td key={c.id} style={tdStyle}>{s.categoryTotals[c.id] ? fmt(s.categoryTotals[c.id]) : "－"}</td>))}
+                        <td style={{ ...tdStyle, fontWeight: 700 }}>{fmt(s.total)}</td>
+                        <td style={tdStyle}>{fmt(s.netExpense)}</td>
+                        <td style={{ ...tdStyle, color: GOOD }}>{s.incomeTotal ? fmt(s.incomeTotal) : "－"}</td>
+                        <td style={{ ...tdStyle, fontWeight: 700, color: s.balance >= 0 ? GOOD : STAMP }}>{s.balance >= 0 ? "+" : ""}{fmt(s.balance)}</td>
+                      </tr>
+                      {expanded && notes.length > 0 && (
+                        <tr>
+                          <td colSpan={categories.length + 6} style={{ background: "#FBF7EC", padding: "8px 14px", borderBottom: "1px solid #ECE1C9" }}>
+                            {notes.map((n) => (
+                              <div key={n.id} style={{ fontSize: 12, color: "#5C5343", padding: "3px 0", fontFamily: "'Noto Sans TC', sans-serif", textAlign: "left", whiteSpace: "pre-wrap" }}>
+                                · {n.text}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
                 <tr style={{ background: PAPER_DEEP }}>
                   <td style={{ ...tdStyle, fontWeight: 800, position: "sticky", left: 0, background: PAPER_DEEP }}>{yg.year}年</td>
+                  <td style={tdStyle}></td>
                   {categories.map((c) => {
                     const sum = yg.months.reduce((s, mk) => s + statsFor(mk).categoryTotals[c.id], 0);
                     return <td key={c.id} style={{ ...tdStyle, fontWeight: 700 }}>{sum ? fmt(sum) : "－"}</td>;

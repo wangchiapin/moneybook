@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { Trash2, PiggyBank, Pencil, Check } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { Trash2, PiggyBank, Pencil, Check, StickyNote, Plus } from "lucide-react";
 import { INK, GOOD, STAMP, INCOME_SOURCES, fmt, dateLabel, monthKeyOf } from "./lib.js";
 import { CatDot, Tile } from "./components.jsx";
 
@@ -8,6 +8,7 @@ export default function LedgerTab({
   confirmDeleteId, setConfirmDeleteId, deleteExpense, onEdit,
   editingIncomeSrc, setEditingIncomeSrc, incomeDraft, setIncomeDraft,
   getIncomeAmount, saveIncome,
+  monthlyNotes, addMonthlyNote, updateMonthlyNote, deleteMonthlyNote,
 }) {
   const monthGroups = useMemo(() => {
     const monthExp = expenses.filter((e) => monthKeyOf(e.date) === viewMonth);
@@ -20,6 +21,11 @@ export default function LedgerTab({
       subtotal: byDate[d].reduce((s, e) => s + Number(e.price || 0), 0),
     }));
   }, [expenses, viewMonth]);
+
+  const notesForMonth = useMemo(
+    () => (monthlyNotes || []).filter((n) => n.month === viewMonth).sort((a, b) => a.createdAt - b.createdAt),
+    [monthlyNotes, viewMonth]
+  );
 
   return (
     <div>
@@ -38,7 +44,7 @@ export default function LedgerTab({
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
         <Tile label="支出總計" value={monthStats.total} color={INK} />
-        <Tile label="扣卡費" value={monthStats.netExpense} color={INK} />
+        <Tile label="支出總計－卡費" value={monthStats.netExpense} color={INK} />
         <Tile label="收入合計" value={monthStats.incomeTotal} color={GOOD} />
       </div>
 
@@ -141,6 +147,85 @@ export default function LedgerTab({
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: GOOD }}>${fmt(monthStats.incomeTotal)}</span>
           </div>
         </div>
+      </div>
+
+      <MonthlyNotesCard
+        notes={notesForMonth} viewMonth={viewMonth}
+        addMonthlyNote={addMonthlyNote} updateMonthlyNote={updateMonthlyNote} deleteMonthlyNote={deleteMonthlyNote}
+      />
+    </div>
+  );
+}
+
+function MonthlyNotesCard({ notes, viewMonth, addMonthlyNote, updateMonthlyNote, deleteMonthlyNote }) {
+  const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [confirmId, setConfirmId] = useState(null);
+
+  const submit = () => {
+    if (!draft.trim()) return;
+    addMonthlyNote(viewMonth, draft);
+    setDraft("");
+  };
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9", marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>
+        <StickyNote size={14} /> 本月備註
+      </div>
+
+      {notes.length === 0 && (
+        <div style={{ fontSize: 12.5, color: "#A79C89", marginBottom: 10 }}>還沒有備註，例如可以記「帳單金額異常，之後查」之類的事。</div>
+      )}
+
+      {notes.map((n) => (
+        <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 0", borderBottom: "1px solid #F3ECDA" }}>
+          {editingId === n.id ? (
+            <>
+              <input
+                type="text" autoFocus value={editDraft} onChange={(e) => setEditDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && editDraft.trim()) { updateMonthlyNote(n.id, editDraft); setEditingId(null); } }}
+                style={{ flex: 1, border: "1px solid #D8CBAE", borderRadius: 8, padding: "6px 8px", fontSize: 13 }}
+              />
+              <button onClick={() => { if (editDraft.trim()) { updateMonthlyNote(n.id, editDraft); setEditingId(null); } }}
+                style={{ background: GOOD, border: "none", color: "#fff", borderRadius: 6, padding: 5, cursor: "pointer", flexShrink: 0 }}>
+                <Check size={13} />
+              </button>
+            </>
+          ) : (
+            <>
+              <div style={{ flex: 1, fontSize: 13, color: "#3A342A", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{n.text}</div>
+              <button onClick={() => { setEditingId(n.id); setEditDraft(n.text); }}
+                style={{ background: "none", border: "none", color: "#B8AC91", cursor: "pointer", padding: 4, flexShrink: 0 }}>
+                <Pencil size={13} />
+              </button>
+              {confirmId === n.id ? (
+                <button onClick={() => { deleteMonthlyNote(n.id); setConfirmId(null); }}
+                  style={{ background: STAMP, color: "#fff", border: "none", borderRadius: 6, padding: "4px 6px", fontSize: 11, display: "flex", alignItems: "center", gap: 3, cursor: "pointer", flexShrink: 0 }}>
+                  <Trash2 size={12} /> 確定
+                </button>
+              ) : (
+                <button onClick={() => setConfirmId(n.id)}
+                  style={{ background: "none", border: "none", color: "#D8CBAE", cursor: "pointer", padding: 4, flexShrink: 0 }}>
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      ))}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <input
+          type="text" placeholder="新增一則備註…" value={draft} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          style={{ flex: 1, border: "1px solid #E0D5BC", borderRadius: 10, padding: "8px 10px", fontSize: 13 }}
+        />
+        <button onClick={submit}
+          style={{ background: STAMP, border: "none", color: "#fff", borderRadius: 10, padding: "0 12px", cursor: "pointer", display: "flex", alignItems: "center" }}>
+          <Plus size={16} />
+        </button>
       </div>
     </div>
   );
