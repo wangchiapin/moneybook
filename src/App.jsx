@@ -158,7 +158,7 @@ export default function App() {
     incomes.find((i) => i.month === month && i.source === source)?.amount || 0;
   const saveIncome = (month, source, amount) => {
     const others = incomes.filter((i) => !(i.month === month && i.source === source));
-    const next = amount > 0 ? [...others, { id: genId(), month, source, amount }] : others;
+    const next = amount !== 0 ? [...others, { id: genId(), month, source, amount }] : others;
     setIncomes(next);
     persist({ incomes: next });
     setEditingIncomeSrc(null);

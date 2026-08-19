@@ -45,7 +45,7 @@ export default function LedgerTab({
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
         <Tile label="支出總計" value={monthStats.total} color={INK} />
         <Tile label="支出總計－卡費" value={monthStats.netExpense} color={INK} />
-        <Tile label="收入合計" value={monthStats.incomeTotal} color={GOOD} />
+        <Tile label="收入合計" value={monthStats.incomeTotal} color={monthStats.incomeTotal >= 0 ? GOOD : STAMP} />
       </div>
 
       <div className="ledger-3col">
@@ -144,7 +144,7 @@ export default function LedgerTab({
           })}
           <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, fontSize: 13, fontWeight: 700 }}>
             <span>共計</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: GOOD }}>${fmt(monthStats.incomeTotal)}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: monthStats.incomeTotal >= 0 ? GOOD : STAMP }}>${fmt(monthStats.incomeTotal)}</span>
           </div>
         </div>
       </div>

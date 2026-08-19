@@ -73,7 +73,7 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
                         {categories.map((c) => (<td key={c.id} style={tdStyle}>{s.categoryTotals[c.id] ? fmt(s.categoryTotals[c.id]) : "－"}</td>))}
                         <td style={{ ...tdStyle, fontWeight: 700 }}>{fmt(s.total)}</td>
                         <td style={tdStyle}>{fmt(s.netExpense)}</td>
-                        <td style={{ ...tdStyle, color: GOOD }}>{s.incomeTotal ? fmt(s.incomeTotal) : "－"}</td>
+                        <td style={{ ...tdStyle, color: s.incomeTotal >= 0 ? GOOD : STAMP }}>{s.incomeTotal ? fmt(s.incomeTotal) : "－"}</td>
                         <td style={{ ...tdStyle, fontWeight: 700, color: s.balance >= 0 ? GOOD : STAMP }}>{s.balance >= 0 ? "+" : ""}{fmt(s.balance)}</td>
                       </tr>
                       {expanded && notes.length > 0 && (
