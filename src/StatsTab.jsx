@@ -26,10 +26,12 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
   }, [allMonths]);
 
   return (
-    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #ECE1C9", overflow: "hidden" }}>
+    <div className="stats-card" style={{ background: "#fff", borderRadius: 16, border: "1px solid #ECE1C9" }}>
       <style>{`
+        .stats-card { overflow: hidden; }
         .stats-scroll { overflow: auto; max-height: 480px; }
         @media (min-width: 760px) {
+          .stats-card { overflow-x: auto; overflow-y: hidden; }
           .stats-scroll { overflow: visible; max-height: none; }
         }
       `}</style>
