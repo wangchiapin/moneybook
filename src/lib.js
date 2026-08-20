@@ -15,6 +15,10 @@ export const DEFAULT_CATEGORIES = [
 
 export const INCOME_SOURCES = ["華語文教學", "股票投資", "交割折讓"];
 
+// 這些收入來源改由外部工具自動同步寫入，記帳頁不開放手動編輯
+// 「華語文教學」由「每日上課收入與學生收費紀錄表」的「實際收入與匯款紀錄」自動同步
+export const SYNCED_INCOME_SOURCES = ["華語文教學"];
+
 export const INK = "#2B2620";
 export const PAPER = "#F6F1E6";
 export const PAPER_DEEP = "#EDE4D0";

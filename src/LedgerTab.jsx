@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Trash2, PiggyBank, Pencil, Check, StickyNote, Plus } from "lucide-react";
-import { INK, GOOD, STAMP, INCOME_SOURCES, fmt, dateLabel, monthKeyOf } from "./lib.js";
+import { Trash2, PiggyBank, Pencil, Check, StickyNote, Plus, Link2 } from "lucide-react";
+import { INK, GOOD, STAMP, INCOME_SOURCES, SYNCED_INCOME_SOURCES, fmt, dateLabel, monthKeyOf } from "./lib.js";
 import { CatDot, Tile } from "./components.jsx";
 
 export default function LedgerTab({
@@ -118,10 +118,21 @@ export default function LedgerTab({
           {INCOME_SOURCES.map((src) => {
             const amount = getIncomeAmount(viewMonth, src);
             const editing = editingIncomeSrc === src;
+            const isSynced = SYNCED_INCOME_SOURCES.includes(src);
             return (
               <div key={src} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", fontSize: 13, borderBottom: "1px solid #F3ECDA" }}>
                 <span style={{ color: "#5C5343" }}>{src}</span>
-                {editing ? (
+                {isSynced ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
+                    ${fmt(amount)}
+                    <span
+                      title="由「每日上課收入與學生收費紀錄表」的實際收入紀錄自動同步，此處為唯讀"
+                      style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontFamily: "'Noto Sans TC', sans-serif", color: "#8A8072", border: "1px solid #ECE1C9", borderRadius: 6, padding: "2px 6px" }}
+                    >
+                      <Link2 size={10} /> 同步
+                    </span>
+                  </div>
+                ) : editing ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <input
                       type="number" autoFocus defaultValue={amount || ""}
