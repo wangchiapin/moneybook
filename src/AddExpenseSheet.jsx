@@ -22,10 +22,10 @@ export default function AddExpenseSheet({ viewMonth, categories, initialEntry, a
 
   const hasKey = !!(aiSettings?.apiKey && aiSettings.apiKey.trim());
 
-  const canSubmit = price !== "" && Number(price) > 0 && category;
+  const canSubmit = !!category;
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit({ date, category, item: item.trim(), price: Number(price), note: note.trim() }, initialEntry?.id);
+    onSubmit({ date, category, item: item.trim(), price: price === "" ? 0 : Number(price), note: note.trim() }, initialEntry?.id);
   };
 
   const handleScan = async (file) => {
