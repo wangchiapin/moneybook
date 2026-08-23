@@ -248,7 +248,7 @@ export default function App() {
         input, select { font-family: inherit; }
         .app-header, .app-content { max-width: 440px; margin: 0 auto; padding: 0 16px; }
         @media (min-width: 760px) {
-          .app-content.app-content--wide { max-width: none; width: 100%; }
+          .app-content.app-content--wide { max-width: 1120px; }
         }
       `}</style>
 
