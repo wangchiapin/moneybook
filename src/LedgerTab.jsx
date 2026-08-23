@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Trash2, PiggyBank, Pencil, Check, StickyNote, Plus } from "lucide-react";
+import { Trash2, PiggyBank, Pencil, Check, StickyNote, Plus, RefreshCw } from "lucide-react";
 import { INK, GOOD, STAMP, INCOME_SOURCES, fmt, dateLabel, monthKeyOf } from "./lib.js";
 import { CatDot, Tile } from "./components.jsx";
 
@@ -118,10 +118,18 @@ export default function LedgerTab({
           {INCOME_SOURCES.map((src) => {
             const amount = getIncomeAmount(viewMonth, src);
             const editing = editingIncomeSrc === src;
+            const synced = src === "華語文教學";
             return (
               <div key={src} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", fontSize: 13, borderBottom: "1px solid #F3ECDA" }}>
-                <span style={{ color: "#5C5343" }}>{src}</span>
-                {editing ? (
+                <span style={{ color: "#5C5343", display: "flex", alignItems: "center", gap: 5 }}>
+                  {src}
+                  {synced && <RefreshCw size={10} color="#B8AC91" title="由「實際收入紀錄」自動同步" />}
+                </span>
+                {synced ? (
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: "#5C5343" }} title="這個欄位由「實際收入紀錄」頁面自動同步，此處僅供查看">
+                    ${fmt(amount)}
+                  </span>
+                ) : editing ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <input
                       type="number" autoFocus defaultValue={amount || ""}
