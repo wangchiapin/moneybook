@@ -10,10 +10,11 @@ export default function SettingsModal({
   categories, setCategoriesPersist,
   expenses, incomes, setDataPersist,
   aiSettings, setAiSettingsPersist,
+  setStatsPasswordPersist,
   initialSection,
   onClose,
 }) {
-  const [section, setSection] = useState(initialSection || "categories"); // categories | data | ai
+  const [section, setSection] = useState(initialSection || "categories"); // categories | data | ai | lock
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
   const [deleteBlocked, setDeleteBlocked] = useState(null);
@@ -22,6 +23,9 @@ export default function SettingsModal({
   const [keyDraft, setKeyDraft] = useState(aiSettings?.apiKey || "");
   const [modelDraft, setModelDraft] = useState(aiSettings?.model || "gemini-flash-latest");
   const [keySaved, setKeySaved] = useState(false);
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [pwMsg, setPwMsg] = useState("");
   const backupFileRef = useRef(null);
   const legacyFileRef = useRef(null);
 
@@ -161,7 +165,7 @@ export default function SettingsModal({
         </div>
 
         <div style={{ display: "flex", background: "#EDE4D0", borderRadius: 999, padding: 4, marginBottom: 16, gap: 4 }}>
-          {[["categories", "分類管理"], ["data", "備份與匯入"], ["ai", "AI 分析"]].map(([key, label]) => (
+          {[["categories", "分類管理"], ["data", "備份與匯入"], ["ai", "AI 分析"], ["lock", "統計密碼"]].map(([key, label]) => (
             <button key={key} onClick={() => setSection(key)}
               style={{
                 flex: 1, border: "none", cursor: "pointer", padding: "8px 0", borderRadius: 999,
@@ -264,6 +268,38 @@ export default function SettingsModal({
             <button onClick={saveAISettings}
               style={{ width: "100%", padding: "12px 0", borderRadius: 12, border: "none", background: keySaved ? GOOD : STAMP, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
               {keySaved ? "已儲存" : "儲存設定"}
+            </button>
+          </div>
+        )}
+
+        {section === "lock" && (
+          <div>
+            <div style={{ fontSize: 12, color: "#8A8072", lineHeight: 1.6, marginBottom: 14 }}>
+              「統計」分頁需要輸入密碼才能查看，預設密碼是 <b>0000</b>。在這裡可以改成你自己的密碼（4 碼以上皆可）。密碼只會用雜湊方式存起來，不會存明碼。
+            </div>
+            <label style={{ display: "block", fontSize: 11.5, color: "#8A8072", fontWeight: 700, marginBottom: 6 }}>新密碼</label>
+            <input
+              type="password" inputMode="numeric" placeholder="輸入新密碼" value={pw1}
+              onChange={(e) => setPw1(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E0D5BC", borderRadius: 10, padding: "9px 12px", fontSize: 13, marginBottom: 12, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+            <label style={{ display: "block", fontSize: 11.5, color: "#8A8072", fontWeight: 700, marginBottom: 6 }}>再輸入一次</label>
+            <input
+              type="password" inputMode="numeric" placeholder="再次輸入新密碼" value={pw2}
+              onChange={(e) => setPw2(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E0D5BC", borderRadius: 10, padding: "9px 12px", fontSize: 13, marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+            {pwMsg && <div style={{ fontSize: 12, color: pwMsg.startsWith("已") ? GOOD : STAMP, marginBottom: 10 }}>{pwMsg}</div>}
+            <button
+              onClick={async () => {
+                if (pw1.length < 4) { setPwMsg("密碼至少要 4 碼"); return; }
+                if (pw1 !== pw2) { setPwMsg("兩次輸入的密碼不一樣"); return; }
+                await setStatsPasswordPersist(pw1);
+                setPwMsg("已更新密碼");
+                setPw1(""); setPw2("");
+              }}
+              style={{ width: "100%", padding: "12px 0", borderRadius: 12, border: "none", background: STAMP, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              更新密碼
             </button>
           </div>
         )}

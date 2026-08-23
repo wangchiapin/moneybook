@@ -13,6 +13,7 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import {
   DEFAULT_CATEGORIES, INK, PAPER, PAPER_DEEP, STAMP,
   todayISO, monthKeyOf, genId, monthLabel, shiftMonth, catMapOf, computeMonthStats,
+  sha256Hex, DEFAULT_STATS_PASSWORD_HASH_PROMISE,
 } from "./lib.js";
 import { StampBadge } from "./components.jsx";
 import LedgerTab from "./LedgerTab.jsx";
@@ -99,6 +100,8 @@ export default function App() {
   const [editingIncomeSrc, setEditingIncomeSrc] = useState(null);
   const [incomeDraft, setIncomeDraft] = useState("");
   const [saveError, setSaveError] = useState(false);
+  const [statsPasswordHash, setStatsPasswordHash] = useState(null); // null = use default "0000"
+  const [statsUnlocked, setStatsUnlocked] = useState(false);
   const initializedMonth = useRef(false);
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
@@ -115,6 +118,7 @@ export default function App() {
         setCategories(data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES);
         setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
         setMonthlyNotes(data.monthlyNotes || []);
+        setStatsPasswordHash(data.statsPasswordHash || null);
         if (!initializedMonth.current && (data.expenses || []).length) {
           const dates = data.expenses.map((e) => e.date).sort();
           setViewMonth(monthKeyOf(dates[dates.length - 1]));
@@ -135,6 +139,22 @@ export default function App() {
       setSaveError(true);
     }
   }, [user]);
+
+  const verifyStatsPassword = async (attempt) => {
+    const attemptHash = await sha256Hex(attempt);
+    const targetHash = statsPasswordHash || (await DEFAULT_STATS_PASSWORD_HASH_PROMISE);
+    if (attemptHash === targetHash) {
+      setStatsUnlocked(true);
+      return true;
+    }
+    return false;
+  };
+
+  const setStatsPasswordPersist = async (newPlainPassword) => {
+    const hash = await sha256Hex(newPlainPassword);
+    setStatsPasswordHash(hash);
+    persist({ statsPasswordHash: hash });
+  };
 
   const addExpense = (entry) => {
     const next = [...expenses, { id: genId(), ...entry }];
@@ -307,7 +327,7 @@ export default function App() {
           />
         )}
         {tab === "stats" && (
-          <StatsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} monthlyNotes={monthlyNotes} />
+          <StatsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} monthlyNotes={monthlyNotes} unlocked={statsUnlocked} onUnlock={verifyStatsPassword} />
         )}
         {tab === "charts" && (
           <ChartsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} />
@@ -348,6 +368,7 @@ export default function App() {
           categories={categories} setCategoriesPersist={setCategoriesPersist}
           expenses={expenses} incomes={incomes} setDataPersist={setDataPersist}
           aiSettings={aiSettings} setAiSettingsPersist={setAiSettingsPersist}
+          setStatsPasswordPersist={setStatsPasswordPersist}
           initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
         />

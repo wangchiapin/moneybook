@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from "react";
-import { StickyNote } from "lucide-react";
-import { GOOD, STAMP, PAPER_DEEP, twYear, fmt, computeMonthStats } from "./lib.js";
+import { StickyNote, Lock } from "lucide-react";
+import { GOOD, STAMP, INK, PAPER_DEEP, twYear, fmt, computeMonthStats } from "./lib.js";
 import { thStyle, tdStyle } from "./components.jsx";
 
-export default function StatsTab({ expenses, incomes, categories, viewMonth, setViewMonth, setTab, monthlyNotes }) {
+export default function StatsTab({ expenses, incomes, categories, viewMonth, setViewMonth, setTab, monthlyNotes, unlocked, onUnlock }) {
   const statsFor = (month) => computeMonthStats(expenses, incomes, categories, month);
   const [expandedMonth, setExpandedMonth] = useState(null);
+  const [pwInput, setPwInput] = useState("");
+  const [pwError, setPwError] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   const notesFor = (month) => (monthlyNotes || []).filter((n) => n.month === month);
 
@@ -24,6 +27,34 @@ export default function StatsTab({ expenses, incomes, categories, viewMonth, set
     });
     return Object.keys(byYear).sort((a, b) => b - a).map((y) => ({ year: y, months: byYear[y].sort().reverse() }));
   }, [allMonths]);
+
+  if (!unlocked) {
+    const submit = async (e) => {
+      e.preventDefault();
+      setChecking(true);
+      const ok = await onUnlock(pwInput);
+      setChecking(false);
+      if (!ok) { setPwError(true); setPwInput(""); } else { setPwError(false); }
+    };
+    return (
+      <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #ECE1C9", padding: "48px 24px", textAlign: "center" }}>
+        <Lock size={28} color="#B8AC91" style={{ marginBottom: 14 }} />
+        <div style={{ fontSize: 14, color: "#5C5343", marginBottom: 18 }}>統計分頁已鎖定，請輸入密碼查看</div>
+        <form onSubmit={submit} style={{ maxWidth: 220, margin: "0 auto" }}>
+          <input
+            type="password" inputMode="numeric" autoFocus placeholder="密碼" value={pwInput}
+            onChange={(e) => { setPwInput(e.target.value); setPwError(false); }}
+            style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${pwError ? STAMP : "#E0D5BC"}`, borderRadius: 10, padding: "10px 12px", fontSize: 15, textAlign: "center", marginBottom: 10, fontFamily: "'JetBrains Mono', monospace" }}
+          />
+          {pwError && <div style={{ fontSize: 12, color: STAMP, marginBottom: 10 }}>密碼不正確</div>}
+          <button type="submit" disabled={checking}
+            style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", background: STAMP, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+            {checking ? "確認中…" : "解鎖"}
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="stats-card" style={{ background: "#fff", borderRadius: 16, border: "1px solid #ECE1C9" }}>
