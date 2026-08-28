@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Plus, ChevronLeft, ChevronRight, BarChart3, BookText,
-  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut, Home, Sparkles,
+  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut, Home, Sparkles, X,
 } from "lucide-react";
 import { auth, db } from "./firebase.js";
 import {
@@ -11,8 +11,8 @@ import {
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 import {
-  DEFAULT_CATEGORIES, INK, PAPER, PAPER_DEEP, STAMP,
-  todayISO, monthKeyOf, genId, monthLabel, shiftMonth, catMapOf, computeMonthStats,
+  DEFAULT_CATEGORIES, DEFAULT_INCOME_SOURCES, DEFAULT_APP_NAME, INK, PAPER, PAPER_DEEP, STAMP,
+  todayISO, monthKeyOf, genId, twYear, monthLabel, shiftMonth, catMapOf, computeMonthStats,
   sha256Hex, DEFAULT_STATS_PASSWORD_HASH_PROMISE,
 } from "./lib.js";
 import { StampBadge } from "./components.jsx";
@@ -53,7 +53,7 @@ function LoginScreen() {
     <div style={{ minHeight: "100vh", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans TC', sans-serif", padding: 20 }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap');`}</style>
       <form onSubmit={submit} style={{ background: "#fff", borderRadius: 20, padding: 28, width: "100%", maxWidth: 360, border: "1px solid #ECE1C9" }}>
-        <h1 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 22, fontWeight: 900, margin: "0 0 4px", color: INK }}>生活帳本</h1>
+        <h1 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 22, fontWeight: 900, margin: "0 0 4px", color: INK }}>{DEFAULT_APP_NAME}</h1>
         <p style={{ fontSize: 12, color: "#8A8072", margin: "0 0 20px" }}>{mode === "signin" ? "登入你的帳本" : "建立你的帳本帳號（僅需一次）"}</p>
         <input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)}
           style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E0D5BC", borderRadius: 12, padding: "11px 12px", fontSize: 14, marginBottom: 10 }} />
@@ -68,6 +68,52 @@ function LoginScreen() {
           {mode === "signin" ? "第一次使用？建立帳號" : "已經有帳號？登入"}
         </button>
       </form>
+    </div>
+  );
+}
+
+// ---------- month / year jump picker ----------
+
+function MonthYearPicker({ viewMonth, onSelect, onClose }) {
+  const [year, setYear] = useState(Number(viewMonth.split("-")[0]));
+  const selectedYear = Number(viewMonth.split("-")[0]);
+  const selectedMonth = Number(viewMonth.split("-")[1]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(43,38,32,0.45)", zIndex: 45, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: PAPER, borderRadius: 20, padding: "18px 20px 22px", width: "100%", maxWidth: 320, border: "1px solid #ECE1C9" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <h3 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 16, fontWeight: 800, margin: 0 }}>跳到指定年月</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#8A8072" }}><X size={18} /></button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18, marginBottom: 16 }}>
+          <button onClick={() => setYear((y) => y - 1)} style={{ background: "none", border: "none", cursor: "pointer", color: INK, padding: 6 }} aria-label="上一年">
+            <ChevronLeft size={18} />
+          </button>
+          <div style={{ textAlign: "center", minWidth: 96 }}>
+            <div style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 15 }}>民國 {twYear(year)} 年</div>
+            <div style={{ fontSize: 11, color: "#8A8072", fontFamily: "'JetBrains Mono', monospace" }}>{year}</div>
+          </div>
+          <button onClick={() => setYear((y) => y + 1)} style={{ background: "none", border: "none", cursor: "pointer", color: INK, padding: 6 }} aria-label="下一年">
+            <ChevronRight size={18} />
+          </button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+            const active = year === selectedYear && m === selectedMonth;
+            return (
+              <button key={m} onClick={() => onSelect(`${year}-${String(m).padStart(2, "0")}`)}
+                style={{
+                  border: active ? `2px solid ${STAMP}` : "1px solid #E0D5BC",
+                  background: active ? `${STAMP}14` : "#fff", color: active ? STAMP : "#5C5343",
+                  borderRadius: 10, padding: "10px 0", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                }}>
+                {m}月
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -87,6 +133,8 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [incomeSources, setIncomeSources] = useState(DEFAULT_INCOME_SOURCES);
+  const [appName, setAppName] = useState(DEFAULT_APP_NAME);
   const [aiSettings, setAiSettings] = useState(DEFAULT_AI_SETTINGS);
   const [monthlyNotes, setMonthlyNotes] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -102,6 +150,7 @@ export default function App() {
   const [saveError, setSaveError] = useState(false);
   const [statsPasswordHash, setStatsPasswordHash] = useState(null); // null = use default "0000"
   const [statsUnlocked, setStatsUnlocked] = useState(false);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
   const initializedMonth = useRef(false);
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
@@ -116,6 +165,8 @@ export default function App() {
         setExpenses(data.expenses || []);
         setIncomes(data.incomes || []);
         setCategories(data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES);
+        setIncomeSources(data.incomeSources && data.incomeSources.length ? data.incomeSources : DEFAULT_INCOME_SOURCES);
+        setAppName(data.appName || DEFAULT_APP_NAME);
         setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
         setMonthlyNotes(data.monthlyNotes || []);
         setStatsPasswordHash(data.statsPasswordHash || null);
@@ -130,6 +181,10 @@ export default function App() {
     );
     return unsub;
   }, [user]);
+
+  useEffect(() => {
+    document.title = appName;
+  }, [appName]);
 
   const persist = useCallback(async (patch) => {
     if (!user) return;
@@ -174,11 +229,11 @@ export default function App() {
     persist({ expenses: next });
     setEditingExpense(null);
   };
-  const getIncomeAmount = (month, source) =>
-    incomes.find((i) => i.month === month && i.source === source)?.amount || 0;
-  const saveIncome = (month, source, amount) => {
-    const others = incomes.filter((i) => !(i.month === month && i.source === source));
-    const next = amount !== 0 ? [...others, { id: genId(), month, source, amount }] : others;
+  const getIncomeAmount = (month, sourceId) =>
+    incomes.find((i) => i.month === month && i.source === sourceId)?.amount || 0;
+  const saveIncome = (month, sourceId, amount) => {
+    const others = incomes.filter((i) => !(i.month === month && i.source === sourceId));
+    const next = amount !== 0 ? [...others, { id: genId(), month, source: sourceId, amount }] : others;
     setIncomes(next);
     persist({ incomes: next });
     setEditingIncomeSrc(null);
@@ -186,6 +241,15 @@ export default function App() {
   const setCategoriesPersist = (next) => {
     setCategories(next);
     persist({ categories: next });
+  };
+  const setIncomeSourcesPersist = (next) => {
+    setIncomeSources(next);
+    persist({ incomeSources: next });
+  };
+  const setAppNamePersist = (next) => {
+    const name = (next || "").trim() || DEFAULT_APP_NAME;
+    setAppName(name);
+    persist({ appName: name });
   };
   const setAiSettingsPersist = (next) => {
     setAiSettings(next);
@@ -226,7 +290,10 @@ export default function App() {
   }, []);
 
   const catMap = useMemo(() => catMapOf(categories), [categories]);
-  const monthStats = useMemo(() => computeMonthStats(expenses, incomes, categories, viewMonth), [expenses, incomes, categories, viewMonth]);
+  const monthStats = useMemo(
+    () => computeMonthStats(expenses, incomes, categories, viewMonth, incomeSources),
+    [expenses, incomes, categories, incomeSources, viewMonth]
+  );
 
   if (user === undefined) {
     return <div style={{ minHeight: "100vh", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", color: INK }}>載入中…</div>;
@@ -256,7 +323,7 @@ export default function App() {
         <div style={{ position: "sticky", top: 0, zIndex: 15, background: PAPER, paddingTop: 20, paddingBottom: 4 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
             <button onClick={goHome} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }} aria-label="回主頁（當月）">
-              <h1 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: 1, color: INK }}>生活帳本</h1>
+              <h1 style={{ fontFamily: "'Noto Serif TC', serif", fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: 1, color: INK }}>{appName}</h1>
               <p style={{ fontSize: 12, color: "#8A8072", margin: "2px 0 0" }}>{user.email}</p>
             </button>
             <StampBadge value={monthStats.balance} size={86} />
@@ -281,14 +348,14 @@ export default function App() {
           )}
 
           <div style={{ background: PAPER_DEEP, borderRadius: 16, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-            <button onClick={() => setViewMonth((m) => shiftMonth(m, -1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }}>
+            <button onClick={() => setViewMonth((m) => shiftMonth(m, -1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }} aria-label="上個月">
               <ChevronLeft size={20} />
             </button>
-            <div style={{ textAlign: "center" }}>
+            <button onClick={() => setShowMonthPicker(true)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "center", padding: "4px 8px", color: INK }} aria-label="選擇年月">
               <div style={{ fontFamily: "'Noto Serif TC', serif", fontWeight: 700, fontSize: 16 }}>{tw}</div>
               <div style={{ fontSize: 11, color: "#8A8072", fontFamily: "'JetBrains Mono', monospace" }}>{greg}</div>
-            </div>
-            <button onClick={() => setViewMonth((m) => shiftMonth(m, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }}>
+            </button>
+            <button onClick={() => setViewMonth((m) => shiftMonth(m, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: INK }} aria-label="下個月">
               <ChevronRight size={20} />
             </button>
           </div>
@@ -315,7 +382,7 @@ export default function App() {
       <div className={`app-content${(tab === "stats" || tab === "ledger") ? " app-content--wide" : ""}`}>
         {tab === "ledger" && (
           <LedgerTab
-            expenses={expenses} incomes={incomes} categories={categories} catMap={catMap}
+            expenses={expenses} incomes={incomes} categories={categories} catMap={catMap} incomeSources={incomeSources}
             monthStats={monthStats} viewMonth={viewMonth}
             confirmDeleteId={confirmDeleteId} setConfirmDeleteId={setConfirmDeleteId} deleteExpense={deleteExpense}
             editingIncomeSrc={editingIncomeSrc} setEditingIncomeSrc={setEditingIncomeSrc}
@@ -324,20 +391,21 @@ export default function App() {
             onEdit={(entry) => setEditingExpense(entry)}
             monthlyNotes={monthlyNotes} addMonthlyNote={addMonthlyNote}
             updateMonthlyNote={updateMonthlyNote} deleteMonthlyNote={deleteMonthlyNote}
+            categoryLockUnlocked={statsUnlocked} onUnlockCategoryLock={verifyStatsPassword}
           />
         )}
         {tab === "stats" && (
-          <StatsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} monthlyNotes={monthlyNotes} unlocked={statsUnlocked} onUnlock={verifyStatsPassword} />
+          <StatsTab expenses={expenses} incomes={incomes} categories={categories} incomeSources={incomeSources} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} monthlyNotes={monthlyNotes} unlocked={statsUnlocked} onUnlock={verifyStatsPassword} />
         )}
         {tab === "charts" && (
-          <ChartsTab expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth} />
+          <ChartsTab expenses={expenses} incomes={incomes} categories={categories} incomeSources={incomeSources} viewMonth={viewMonth} />
         )}
         {tab === "search" && (
           <SearchTab expenses={expenses} categories={categories} catMap={catMap} />
         )}
         {tab === "ai" && (
           <AITab
-            expenses={expenses} incomes={incomes} categories={categories} viewMonth={viewMonth}
+            expenses={expenses} incomes={incomes} categories={categories} incomeSources={incomeSources} viewMonth={viewMonth}
             aiSettings={aiSettings}
             onOpenSettings={() => { setSettingsSection("ai"); setShowSettings(true); }}
           />
@@ -365,12 +433,21 @@ export default function App() {
       )}
       {showSettings && (
         <SettingsModal
+          appName={appName} setAppNamePersist={setAppNamePersist}
           categories={categories} setCategoriesPersist={setCategoriesPersist}
+          incomeSources={incomeSources} setIncomeSourcesPersist={setIncomeSourcesPersist}
           expenses={expenses} incomes={incomes} setDataPersist={setDataPersist}
           aiSettings={aiSettings} setAiSettingsPersist={setAiSettingsPersist}
           setStatsPasswordPersist={setStatsPasswordPersist}
           initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+      {showMonthPicker && (
+        <MonthYearPicker
+          viewMonth={viewMonth}
+          onSelect={(mk) => { setViewMonth(mk); setShowMonthPicker(false); }}
+          onClose={() => setShowMonthPicker(false)}
         />
       )}
     </div>

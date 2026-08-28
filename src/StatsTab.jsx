@@ -3,8 +3,8 @@ import { StickyNote, Lock } from "lucide-react";
 import { GOOD, STAMP, INK, PAPER_DEEP, twYear, fmt, computeMonthStats } from "./lib.js";
 import { thStyle, tdStyle } from "./components.jsx";
 
-export default function StatsTab({ expenses, incomes, categories, viewMonth, setViewMonth, setTab, monthlyNotes, unlocked, onUnlock }) {
-  const statsFor = (month) => computeMonthStats(expenses, incomes, categories, month);
+export default function StatsTab({ expenses, incomes, categories, incomeSources, viewMonth, setViewMonth, setTab, monthlyNotes, unlocked, onUnlock }) {
+  const statsFor = (month) => computeMonthStats(expenses, incomes, categories, month, incomeSources);
   const [expandedMonth, setExpandedMonth] = useState(null);
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);

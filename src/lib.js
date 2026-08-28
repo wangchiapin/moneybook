@@ -13,7 +13,23 @@ export const DEFAULT_CATEGORIES = [
   { id: "公益", name: "公益", color: "#A3352A" },
 ];
 
-export const INCOME_SOURCES = ["華語文教學", "股票投資", "交割折讓"];
+// Income sources are { id, name }. `id` is what actually gets stored on each
+// income record (source: id) and MUST stay stable — the tutoring app syncs
+// income directly into Firestore using the id "華語文教學", so that id can
+// never change even if the user renames the display label in Settings.
+export const DEFAULT_INCOME_SOURCES = [
+  { id: "華語文教學", name: "華語文教學" },
+  { id: "股票投資", name: "股票投資" },
+  { id: "交割折讓", name: "交割折讓" },
+];
+export const SYNCED_INCOME_SOURCE_ID = "華語文教學";
+
+// Column labels used by the *legacy* Excel importer only. Kept separate from
+// DEFAULT_INCOME_SOURCES so that renaming/adding income sources in Settings
+// never affects how the old spreadsheet format is parsed.
+export const LEGACY_INCOME_LABELS = ["華語文教學", "股票投資", "交割折讓"];
+
+export const DEFAULT_APP_NAME = "生活帳本";
 
 export const INK = "#2B2620";
 export const PAPER = "#F6F1E6";
@@ -49,7 +65,7 @@ export function catMapOf(categories) {
   return Object.fromEntries(categories.map((c) => [c.id, c]));
 }
 
-export function computeMonthStats(expenses, incomes, categories, month) {
+export function computeMonthStats(expenses, incomes, categories, month, incomeSources = DEFAULT_INCOME_SOURCES) {
   const monthExp = expenses.filter((e) => monthKeyOf(e.date) === month);
   const categoryTotals = Object.fromEntries(categories.map((c) => [c.id, 0]));
   let total = 0;
@@ -60,8 +76,8 @@ export function computeMonthStats(expenses, incomes, categories, month) {
   });
   const cardFee = categoryTotals["卡費"] || 0;
   const netExpense = total - cardFee;
-  const incomeTotal = INCOME_SOURCES.reduce(
-    (s, src) => s + (incomes.find((i) => i.month === month && i.source === src)?.amount || 0),
+  const incomeTotal = incomeSources.reduce(
+    (s, src) => s + (incomes.find((i) => i.month === month && i.source === src.id)?.amount || 0),
     0
   );
   const balance = incomeTotal - netExpense;

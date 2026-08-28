@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from "react";
 import { Trash2, PiggyBank, Pencil, Check, StickyNote, Plus, RefreshCw } from "lucide-react";
-import { INK, GOOD, STAMP, INCOME_SOURCES, fmt, dateLabel, monthKeyOf } from "./lib.js";
-import { CatDot, Tile } from "./components.jsx";
+import { INK, GOOD, STAMP, SYNCED_INCOME_SOURCE_ID, fmt, dateLabel, monthKeyOf } from "./lib.js";
+import { CatDot, Tile, PasswordGate } from "./components.jsx";
 
 export default function LedgerTab({
-  expenses, incomes, categories, catMap, monthStats, viewMonth,
+  expenses, incomes, categories, catMap, incomeSources, monthStats, viewMonth,
   confirmDeleteId, setConfirmDeleteId, deleteExpense, onEdit,
   editingIncomeSrc, setEditingIncomeSrc, incomeDraft, setIncomeDraft,
   getIncomeAmount, saveIncome,
   monthlyNotes, addMonthlyNote, updateMonthlyNote, deleteMonthlyNote,
+  categoryLockUnlocked, onUnlockCategoryLock,
 }) {
   const monthGroups = useMemo(() => {
     const monthExp = expenses.filter((e) => monthKeyOf(e.date) === viewMonth);
@@ -51,18 +52,25 @@ export default function LedgerTab({
       <div className="ledger-3col">
         <div className="col-category" style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>分類明細</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {categories.map((c) => (
-              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C5343" }}>
-                  <CatDot color={c.color} /> {c.name}
-                </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: monthStats.categoryTotals[c.id] ? INK : "#C9BFA9" }}>
-                  {fmt(monthStats.categoryTotals[c.id])}
-                </span>
-              </div>
-            ))}
-          </div>
+          <PasswordGate
+            unlocked={categoryLockUnlocked}
+            onUnlock={onUnlockCategoryLock}
+            compact
+            message="分類明細已鎖定，請輸入密碼查看"
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {categories.map((c) => (
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C5343" }}>
+                    <CatDot color={c.color} /> {c.name}
+                  </span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: monthStats.categoryTotals[c.id] ? INK : "#C9BFA9" }}>
+                    {fmt(monthStats.categoryTotals[c.id])}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </PasswordGate>
         </div>
 
         <div className="col-entries lg-scroll" style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9", maxHeight: 560, overflowY: "auto" }}>
@@ -115,14 +123,14 @@ export default function LedgerTab({
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#8A8072", marginBottom: 10, letterSpacing: 1 }}>
             <PiggyBank size={14} /> 本月收入
           </div>
-          {INCOME_SOURCES.map((src) => {
-            const amount = getIncomeAmount(viewMonth, src);
-            const editing = editingIncomeSrc === src;
-            const synced = src === "華語文教學";
+          {incomeSources.map((source) => {
+            const amount = getIncomeAmount(viewMonth, source.id);
+            const editing = editingIncomeSrc === source.id;
+            const synced = source.id === SYNCED_INCOME_SOURCE_ID;
             return (
-              <div key={src} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", fontSize: 13, borderBottom: "1px solid #F3ECDA" }}>
+              <div key={source.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", fontSize: 13, borderBottom: "1px solid #F3ECDA" }}>
                 <span style={{ color: "#5C5343", display: "flex", alignItems: "center", gap: 5 }}>
-                  {src}
+                  {source.name}
                   {synced && <RefreshCw size={10} color="#B8AC91" title="由「實際收入紀錄」自動同步" />}
                 </span>
                 {synced ? (
@@ -134,15 +142,15 @@ export default function LedgerTab({
                     <input
                       type="number" autoFocus defaultValue={amount || ""}
                       onChange={(e) => setIncomeDraft(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") saveIncome(viewMonth, src, Number(incomeDraft || 0)); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveIncome(viewMonth, source.id, Number(incomeDraft || 0)); }}
                       style={{ width: 80, border: "1px solid #D8CBAE", borderRadius: 8, padding: "4px 6px", fontSize: 13, textAlign: "right", fontFamily: "'JetBrains Mono', monospace" }}
                     />
-                    <button onClick={() => saveIncome(viewMonth, src, Number(incomeDraft || 0))} style={{ background: GOOD, border: "none", color: "#fff", borderRadius: 6, padding: 5, cursor: "pointer" }}>
+                    <button onClick={() => saveIncome(viewMonth, source.id, Number(incomeDraft || 0))} style={{ background: GOOD, border: "none", color: "#fff", borderRadius: 6, padding: 5, cursor: "pointer" }}>
                       <Check size={13} />
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => { setEditingIncomeSrc(src); setIncomeDraft(String(amount || "")); }}
+                  <button onClick={() => { setEditingIncomeSrc(source.id); setIncomeDraft(String(amount || "")); }}
                     style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: INK, fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
                     ${fmt(amount)} <Pencil size={11} color="#B8AC91" />
                   </button>

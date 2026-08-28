@@ -1,20 +1,31 @@
 import React, { useRef, useState } from "react";
 import { X, Plus, Trash2, Download, Upload, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
-import { PAPER, STAMP, GOOD, INCOME_SOURCES, genId, todayISO } from "./lib.js";
+import { PAPER, STAMP, GOOD, LEGACY_INCOME_LABELS, SYNCED_INCOME_SOURCE_ID, DEFAULT_APP_NAME, genId, todayISO } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
 
 const PALETTE = ["#C1622D", "#B4637A", "#2F6F62", "#4A6FA5", "#A97C50", "#7B5E7B", "#5B5B5B", "#4B5A85", "#3F7D5C", "#C79A2A", "#8C8474", "#A3352A", "#6B8E23", "#B5533C"];
 
+const SECTION_TABS = [
+  ["general", "一般設定"],
+  ["categories", "分類管理"],
+  ["income", "收入來源"],
+  ["data", "備份與匯入"],
+  ["ai", "AI 分析"],
+  ["lock", "修改密碼"],
+];
+
 export default function SettingsModal({
+  appName, setAppNamePersist,
   categories, setCategoriesPersist,
+  incomeSources, setIncomeSourcesPersist,
   expenses, incomes, setDataPersist,
   aiSettings, setAiSettingsPersist,
   setStatsPasswordPersist,
   initialSection,
   onClose,
 }) {
-  const [section, setSection] = useState(initialSection || "categories"); // categories | data | ai | lock
+  const [section, setSection] = useState(initialSection || "categories"); // general | categories | income | data | ai | lock
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
   const [deleteBlocked, setDeleteBlocked] = useState(null);
@@ -26,10 +37,15 @@ export default function SettingsModal({
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [pwMsg, setPwMsg] = useState("");
+  const [appNameDraft, setAppNameDraft] = useState(appName || DEFAULT_APP_NAME);
+  const [appNameSaved, setAppNameSaved] = useState(false);
+  const [newIncomeName, setNewIncomeName] = useState("");
+  const [incomeDeleteBlocked, setIncomeDeleteBlocked] = useState(null);
   const backupFileRef = useRef(null);
   const legacyFileRef = useRef(null);
 
   const usedCategoryIds = new Set(expenses.map((e) => e.category));
+  const usedIncomeSourceIds = new Set(incomes.map((i) => i.source));
 
   const addCategory = () => {
     const name = newName.trim();
@@ -50,6 +66,33 @@ export default function SettingsModal({
   const deleteCategory = (id) => {
     if (usedCategoryIds.has(id)) { setDeleteBlocked(id); setTimeout(() => setDeleteBlocked(null), 2200); return; }
     setCategoriesPersist(categories.filter((c) => c.id !== id));
+  };
+
+  // ---- income sources ----
+  const addIncomeSource = () => {
+    const name = newIncomeName.trim();
+    if (!name) return;
+    const next = [...incomeSources, { id: genId(), name }];
+    setIncomeSourcesPersist(next);
+    setNewIncomeName("");
+  };
+  const renameIncomeSource = (id, name) => {
+    setIncomeSourcesPersist(incomeSources.map((s) => (s.id === id ? { ...s, name } : s)));
+  };
+  const deleteIncomeSource = (id) => {
+    if (id === SYNCED_INCOME_SOURCE_ID || usedIncomeSourceIds.has(id)) {
+      setIncomeDeleteBlocked(id);
+      setTimeout(() => setIncomeDeleteBlocked(null), 2200);
+      return;
+    }
+    setIncomeSourcesPersist(incomeSources.filter((s) => s.id !== id));
+  };
+
+  // ---- app name ----
+  const saveAppName = () => {
+    setAppNamePersist(appNameDraft);
+    setAppNameSaved(true);
+    setTimeout(() => setAppNameSaved(false), 2000);
   };
 
   // ---- export ----
@@ -132,7 +175,7 @@ export default function SettingsModal({
         }
         const incLabel = row[7];
         const incAmount = toNumber(row[8]);
-        if (INCOME_SOURCES.includes(incLabel) && incAmount !== null && incAmount > 0) {
+        if (LEGACY_INCOME_LABELS.includes(incLabel) && incAmount !== null && incAmount > 0) {
           newIncomes.push({ id: genId(), month: monthKey, source: incLabel, amount: incAmount });
         }
       });
@@ -164,18 +207,37 @@ export default function SettingsModal({
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#8A8072" }}><X size={20} /></button>
         </div>
 
-        <div style={{ display: "flex", background: "#EDE4D0", borderRadius: 999, padding: 4, marginBottom: 16, gap: 4 }}>
-          {[["categories", "分類管理"], ["data", "備份與匯入"], ["ai", "AI 分析"], ["lock", "統計密碼"]].map(([key, label]) => (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", background: "#EDE4D0", borderRadius: 16, padding: 4, marginBottom: 16, gap: 4 }}>
+          {SECTION_TABS.map(([key, label]) => (
             <button key={key} onClick={() => setSection(key)}
               style={{
-                flex: 1, border: "none", cursor: "pointer", padding: "8px 0", borderRadius: 999,
+                border: "none", cursor: "pointer", padding: "8px 2px", borderRadius: 12,
                 background: section === key ? "#fff" : "transparent", color: section === key ? STAMP : "#8A8072",
-                fontWeight: section === key ? 700 : 500, fontSize: 13,
+                fontWeight: section === key ? 700 : 500, fontSize: 12,
               }}>
               {label}
             </button>
           ))}
         </div>
+
+        {section === "general" && (
+          <div>
+            <div style={{ fontSize: 12, color: "#8A8072", lineHeight: 1.6, marginBottom: 14 }}>
+              修改整個帳本顯示的名稱，會套用在頁面標題與登入後的抬頭上。
+            </div>
+            <label style={{ display: "block", fontSize: 11.5, color: "#8A8072", fontWeight: 700, marginBottom: 6 }}>帳本名稱</label>
+            <input
+              type="text" placeholder="生活帳本" value={appNameDraft}
+              onChange={(e) => setAppNameDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveAppName(); }}
+              style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E0D5BC", borderRadius: 10, padding: "9px 12px", fontSize: 14, marginBottom: 12 }}
+            />
+            <button onClick={saveAppName}
+              style={{ width: "100%", padding: "12px 0", borderRadius: 12, border: "none", background: appNameSaved ? GOOD : STAMP, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              {appNameSaved ? "已儲存" : "儲存名稱"}
+            </button>
+          </div>
+        )}
 
         {section === "categories" && (
           <div>
@@ -206,6 +268,47 @@ export default function SettingsModal({
                 style={{ flex: 1, border: "1px solid #E0D5BC", borderRadius: 8, padding: "6px 8px", fontSize: 13 }}
               />
               <button onClick={addCategory} style={{ background: STAMP, border: "none", color: "#fff", borderRadius: 8, padding: 7, cursor: "pointer" }}>
+                <Plus size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {section === "income" && (
+          <div>
+            <div style={{ fontSize: 12, color: "#8A8072", lineHeight: 1.6, marginBottom: 14 }}>
+              管理「本月收入」會列出的項目。「華語文教學」由教學收入自動同步寫入，名稱可以改，但不能刪除；其他項目如果已有收入紀錄使用，也需要先清除紀錄才能刪除。
+            </div>
+            {incomeSources.map((s) => {
+              const synced = s.id === SYNCED_INCOME_SOURCE_ID;
+              const blocked = incomeDeleteBlocked === s.id;
+              return (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid #F3ECDA" }}>
+                  <input
+                    type="text" defaultValue={s.name}
+                    onBlur={(e) => { if (e.target.value.trim()) renameIncomeSource(s.id, e.target.value.trim()); }}
+                    style={{ flex: 1, border: "1px solid #E0D5BC", borderRadius: 8, padding: "6px 8px", fontSize: 13 }}
+                  />
+                  {synced && <RefreshHint />}
+                  {blocked ? (
+                    <span style={{ fontSize: 11, color: STAMP, maxWidth: 100 }}>{synced ? "自動同步，無法刪除" : "已有收入使用"}</span>
+                  ) : (
+                    <button onClick={() => deleteIncomeSource(s.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#B8AC91", padding: 4 }}>
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
+              <input
+                type="text" placeholder="新收入項目名稱" value={newIncomeName}
+                onChange={(e) => setNewIncomeName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addIncomeSource(); }}
+                style={{ flex: 1, border: "1px solid #E0D5BC", borderRadius: 8, padding: "6px 8px", fontSize: 13 }}
+              />
+              <button onClick={addIncomeSource} style={{ background: STAMP, border: "none", color: "#fff", borderRadius: 8, padding: 7, cursor: "pointer" }}>
                 <Plus size={16} />
               </button>
             </div>
@@ -275,7 +378,7 @@ export default function SettingsModal({
         {section === "lock" && (
           <div>
             <div style={{ fontSize: 12, color: "#8A8072", lineHeight: 1.6, marginBottom: 14 }}>
-              「統計」分頁需要輸入密碼才能查看，預設密碼是 <b>0000</b>。在這裡可以改成你自己的密碼（4 碼以上皆可）。密碼只會用雜湊方式存起來，不會存明碼。
+              「統計」分頁與「記帳」頁的「分類明細」都需要輸入這組密碼才能查看，預設密碼是 <b>0000</b>。在這裡可以改成你自己的密碼（4 碼以上皆可）。密碼只會用雜湊方式存起來，不會存明碼。
             </div>
             <label style={{ display: "block", fontSize: 11.5, color: "#8A8072", fontWeight: 700, marginBottom: 6 }}>新密碼</label>
             <input
@@ -306,6 +409,10 @@ export default function SettingsModal({
       </div>
     </div>
   );
+}
+
+function RefreshHint() {
+  return <span style={{ fontSize: 10, color: "#B8AC91", whiteSpace: "nowrap" }}>自動同步</span>;
 }
 
 function toNumber(cell) {

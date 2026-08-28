@@ -9,7 +9,7 @@ const RANGES = [
   ["all", "全部"],
 ];
 
-export default function AITab({ expenses, incomes, categories, viewMonth, aiSettings, onOpenSettings }) {
+export default function AITab({ expenses, incomes, categories, incomeSources, viewMonth, aiSettings, onOpenSettings }) {
   const [range, setRange] = useState("month");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -29,7 +29,7 @@ export default function AITab({ expenses, incomes, categories, viewMonth, aiSett
     const agg = { categoryTotals: {}, total: 0, netExpense: 0, incomeTotal: 0, balance: 0 };
     categories.forEach((c) => { agg.categoryTotals[c.id] = 0; });
     monthsInRange.forEach((mk) => {
-      const s = computeMonthStats(expenses, incomes, categories, mk);
+      const s = computeMonthStats(expenses, incomes, categories, mk, incomeSources);
       categories.forEach((c) => { agg.categoryTotals[c.id] += s.categoryTotals[c.id] || 0; });
       agg.total += s.total;
       agg.netExpense += s.netExpense;
@@ -37,7 +37,7 @@ export default function AITab({ expenses, incomes, categories, viewMonth, aiSett
       agg.balance += s.balance;
     });
     return agg;
-  }, [monthsInRange, expenses, incomes, categories]);
+  }, [monthsInRange, expenses, incomes, categories, incomeSources]);
 
   const rangeLabel = range === "month" ? `${twYear(viewMonth.split("-")[0])}年${Number(viewMonth.split("-")[1])}月`
     : range === "year" ? `民國 ${twYear(viewMonth.split("-")[0])} 年全年`

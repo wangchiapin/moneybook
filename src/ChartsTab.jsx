@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { STAMP, GOOD, PAPER_DEEP, twYear, fmt, computeMonthStats, monthKeyOf } from "./lib.js";
 
-export default function ChartsTab({ expenses, incomes, categories, viewMonth }) {
+export default function ChartsTab({ expenses, incomes, categories, incomeSources, viewMonth }) {
   const [barMonth, setBarMonth] = useState(viewMonth);
 
   const availableMonths = useMemo(() => {
@@ -23,28 +23,28 @@ export default function ChartsTab({ expenses, incomes, categories, viewMonth }) 
   const effectiveLineYear = availableYears.includes(lineYear) ? lineYear : availableYears[availableYears.length - 1];
 
   const barData = useMemo(() => {
-    const s = computeMonthStats(expenses, incomes, categories, barMonth);
+    const s = computeMonthStats(expenses, incomes, categories, barMonth, incomeSources);
     return categories
       .map((c) => ({ name: c.name, id: c.id, amount: s.categoryTotals[c.id] || 0, color: c.color }))
       .filter((d) => d.amount > 0)
       .sort((a, b) => b.amount - a.amount);
-  }, [expenses, incomes, categories, barMonth]);
+  }, [expenses, incomes, categories, incomeSources, barMonth]);
 
   const lineData = useMemo(() => {
     const gregYear = Number(effectiveLineYear) + 1911;
     return Array.from({ length: 12 }, (_, i) => {
       const mk = `${gregYear}-${String(i + 1).padStart(2, "0")}`;
-      const s = computeMonthStats(expenses, incomes, categories, mk);
+      const s = computeMonthStats(expenses, incomes, categories, mk, incomeSources);
       return { name: `${i + 1}月`, 支出: s.netExpense, 收入: s.incomeTotal };
     });
-  }, [expenses, incomes, categories, effectiveLineYear]);
+  }, [expenses, incomes, categories, incomeSources, effectiveLineYear]);
 
   const allTimeData = useMemo(() => {
     return availableMonths.map((mk) => {
-      const s = computeMonthStats(expenses, incomes, categories, mk);
+      const s = computeMonthStats(expenses, incomes, categories, mk, incomeSources);
       return { name: `${twYear(mk.split("-")[0])}/${Number(mk.split("-")[1])}`, 支出: s.netExpense, 收入: s.incomeTotal };
     });
-  }, [availableMonths, expenses, incomes, categories]);
+  }, [availableMonths, expenses, incomes, categories, incomeSources]);
 
   const selectStyle = { border: "1px solid #E0D5BC", borderRadius: 10, padding: "6px 10px", fontSize: 13, background: "#fff", color: "#2B2620" };
 
