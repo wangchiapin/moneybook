@@ -37,7 +37,18 @@ export const PAPER_DEEP = "#EDE4D0";
 export const STAMP = "#A3352A";
 export const GOOD = "#3F7D5C";
 
-export const todayISO = () => new Date().toISOString().slice(0, 10);
+export const todayISO = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year").value;
+  const m = parts.find((p) => p.type === "month").value;
+  const d = parts.find((p) => p.type === "day").value;
+  return `${y}-${m}-${d}`;
+};
 export const monthKeyOf = (iso) => iso.slice(0, 7);
 export const twYear = (yyyy) => Number(yyyy) - 1911;
 export const fmt = (n) => Math.round(n || 0).toLocaleString("zh-Hant-TW");
@@ -46,8 +57,8 @@ export const genId = () => Date.now().toString(36) + Math.random().toString(36).
 export const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
 export function dateLabel(iso) {
-  const d = new Date(iso + "T00:00:00");
-  return `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))} (${WEEKDAYS[d.getDay()]})`;
+  const d = new Date(iso + "T00:00:00Z");
+  return `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))} (${WEEKDAYS[d.getUTCDay()]})`;
 }
 
 export function monthLabel(mk) {
@@ -57,8 +68,8 @@ export function monthLabel(mk) {
 
 export function shiftMonth(mk, delta) {
   const [y, m] = mk.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export function catMapOf(categories) {
