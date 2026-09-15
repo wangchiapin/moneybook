@@ -11,7 +11,7 @@ import {
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 import {
-  DEFAULT_CATEGORIES, DEFAULT_INCOME_SOURCES, DEFAULT_APP_NAME, INK, PAPER, PAPER_DEEP, STAMP,
+  DEFAULT_CATEGORIES, DEFAULT_INCOME_SOURCES, DEFAULT_APP_NAME, INK, PAPER, PAPER_DEEP, STAMP, GOOD,
   todayISO, monthKeyOf, genId, twYear, monthLabel, shiftMonth, catMapOf, computeMonthStats,
   sha256Hex, DEFAULT_STATS_PASSWORD_HASH_PROMISE,
 } from "./lib.js";
@@ -22,6 +22,7 @@ import ChartsTab from "./ChartsTab.jsx";
 import SearchTab from "./SearchTab.jsx";
 import AITab from "./AITab.jsx";
 import AddExpenseSheet from "./AddExpenseSheet.jsx";
+import QuickNoteSheet from "./QuickNoteSheet.jsx";
 import SettingsModal from "./SettingsModal.jsx";
 
 const DEFAULT_AI_SETTINGS = { apiKey: "", model: "gemini-flash-latest" };
@@ -151,6 +152,8 @@ export default function App() {
   const [statsPasswordHash, setStatsPasswordHash] = useState(null); // null = use default "0000"
   const [statsUnlocked, setStatsUnlocked] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showQuickNote, setShowQuickNote] = useState(false);
+  const [quickNoteDraft, setQuickNoteDraft] = useState("");
   const initializedMonth = useRef(false);
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
@@ -170,6 +173,7 @@ export default function App() {
         setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
         setMonthlyNotes(data.monthlyNotes || []);
         setStatsPasswordHash(data.statsPasswordHash || null);
+        setQuickNoteDraft(data.quickNoteDraft || "");
         if (!initializedMonth.current && (data.expenses || []).length) {
           const dates = data.expenses.map((e) => e.date).sort();
           setViewMonth(monthKeyOf(dates[dates.length - 1]));
@@ -259,6 +263,24 @@ export default function App() {
     setExpenses(nextExpenses);
     setIncomes(nextIncomes);
     persist({ expenses: nextExpenses, incomes: nextIncomes });
+  };
+  const setQuickNoteDraftPersist = (text) => {
+    setQuickNoteDraft(text);
+    persist({ quickNoteDraft: text });
+  };
+  const addQuickNoteExpenses = (candidates) => {
+    const newExpenses = candidates.map((c) => ({
+      id: genId(),
+      date: c.date,
+      category: c.category,
+      item: c.item.trim(),
+      price: Number(c.price) || 0,
+      note: "",
+      quickNoteOrigin: true,
+    }));
+    const next = [...expenses, ...newExpenses];
+    setExpenses(next);
+    persist({ expenses: next });
   };
 
   const addMonthlyNote = (month, text) => {
@@ -413,6 +435,19 @@ export default function App() {
       </div>
 
       {tab === "ledger" && (
+        <button onClick={() => setShowQuickNote(true)} aria-label="隨手記"
+          style={{
+            position: "fixed", bottom: 92, right: "50%", transform: "translateX(190px)",
+            width: 56, height: 56, borderRadius: "50%", background: GOOD, color: "#fff",
+            border: "none", boxShadow: "0 6px 16px rgba(63,125,92,0.4)", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20,
+            fontSize: 10.5, fontWeight: 700, lineHeight: 1.3, padding: 0,
+          }}>
+          隨手記
+        </button>
+      )}
+
+      {tab === "ledger" && (
         <button onClick={() => setShowAdd(true)} aria-label="新增支出"
           style={{
             position: "fixed", bottom: 24, right: "50%", transform: "translateX(190px)",
@@ -441,6 +476,15 @@ export default function App() {
           setStatsPasswordPersist={setStatsPasswordPersist}
           initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+      {showQuickNote && (
+        <QuickNoteSheet
+          categories={categories}
+          initialDraft={quickNoteDraft}
+          onClose={() => setShowQuickNote(false)}
+          onConfirm={addQuickNoteExpenses}
+          onSaveDraft={setQuickNoteDraftPersist}
         />
       )}
       {showMonthPicker && (

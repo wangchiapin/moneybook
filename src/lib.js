@@ -101,3 +101,109 @@ export async function sha256Hex(text) {
 }
 
 export const DEFAULT_STATS_PASSWORD_HASH_PROMISE = sha256Hex("0000");
+
+// ---------- 隨手記 (quick jot) ----------
+
+// Keyword → category-id lookup used to auto-guess a category from an item's
+// text. Keyed by the DEFAULT_CATEGORIES ids; if the user has renamed/removed
+// a default category, guessCategoryId() simply skips ids no longer present.
+export const CATEGORY_KEYWORDS = {
+  "食": ["早餐", "午餐", "晚餐", "消夜", "宵夜", "咖啡", "飲料", "便當", "小吃", "火鍋", "燒烤", "超商", "超市", "買菜", "食材", "外送", "飲食"],
+  "衣": ["衣服", "鞋", "包包", "褲", "裙", "配件", "飾品"],
+  "共同基金": ["基金", "共同基金", "提撥", "存款"],
+  "行": ["加油", "停車", "計程車", "uber", "Uber", "公車", "捷運", "高鐵", "火車", "過路費", "機車", "保養", "燃料稅", "牌照稅"],
+  "居家": ["房租", "水電", "瓦斯費", "電費", "水費", "網路費", "家具", "家電", "修繕", "日用品", "衛生紙"],
+  "媽媽": ["媽媽", "母親", "孝親"],
+  "卡費": ["卡費", "信用卡", "刷卡", "分期"],
+  "保險": ["保險", "保費", "壽險", "醫療險", "車險"],
+  "育": ["學費", "補習", "課程", "教育", "考試", "證照"],
+  "樂": ["電影", "唱歌", "KTV", "ktv", "遊戲", "旅遊", "展覽", "演唱會", "訂閱", "netflix", "Netflix", "spotify", "Spotify"],
+  "公益": ["捐款", "公益", "樂捐", "慈善"],
+};
+
+export function guessCategoryId(text, categories) {
+  if (!text) return "";
+  const catIds = new Set(categories.map((c) => c.id));
+  for (const [id, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (!catIds.has(id)) continue;
+    if (keywords.some((kw) => text.includes(kw))) return id;
+  }
+  return "";
+}
+
+// Date patterns a 隨手記 line may start with. Checked in order — more
+// specific / longer patterns first so an 8-digit date is never mistaken for
+// a leading 4-digit MMDD date.
+const QUICK_NOTE_DATE_PATTERNS = [
+  { re: /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/, kind: "ad" },
+  { re: /^民國(\d{2,3})年?(\d{1,2})月(\d{1,2})日?/, kind: "roc" },
+  { re: /^(\d{4})(\d{2})(\d{2})(?!\d)/, kind: "ad-compact" },
+  { re: /^(\d{2})(\d{2})(?!\d)/, kind: "mmdd" },
+];
+
+function extractQuickNoteDate(line, todayIso) {
+  for (const { re, kind } of QUICK_NOTE_DATE_PATTERNS) {
+    const m = line.match(re);
+    if (!m) continue;
+    let y, mo, d;
+    if (kind === "ad" || kind === "ad-compact") {
+      y = Number(m[1]); mo = Number(m[2]); d = Number(m[3]);
+    } else if (kind === "roc") {
+      y = Number(m[1]) + 1911; mo = Number(m[2]); d = Number(m[3]);
+    } else {
+      y = Number(todayIso.slice(0, 4)); mo = Number(m[1]); d = Number(m[2]);
+    }
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    return { iso: `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`, rest: line.slice(m[0].length).trim() };
+  }
+  return null;
+}
+
+// Splits the remainder of a line (after the date) into { item, price } pairs,
+// e.g. "早餐 500 午餐300 晚餐600" → three pairs. A trailing item with no
+// number after it still becomes a pair with price 0 (flagged incomplete
+// later), rather than being dropped.
+function extractQuickNotePairs(rest) {
+  const pairs = [];
+  const re = /([^\d]*?)(\d+(?:\.\d+)?)/g;
+  let m;
+  let lastIndex = 0;
+  while ((m = re.exec(rest)) !== null) {
+    const item = m[1].trim();
+    const price = Number(m[2]);
+    pairs.push({ item, price });
+    lastIndex = re.lastIndex;
+  }
+  const trailing = rest.slice(lastIndex).trim();
+  if (trailing) pairs.push({ item: trailing, price: 0 });
+  if (pairs.length === 0 && rest.trim()) pairs.push({ item: rest.trim(), price: 0 });
+  return pairs;
+}
+
+// Parses free-text 隨手記 input into candidate expenses. Lines with no
+// recognizable leading date go into `unresolved` untouched (left for the
+// user to fix by hand) instead of being dropped or guessed at.
+export function parseQuickNoteText(rawText, todayIso, categories) {
+  const lines = (rawText || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const candidates = [];
+  const unresolved = [];
+  lines.forEach((line) => {
+    const dateInfo = extractQuickNoteDate(line, todayIso);
+    if (!dateInfo) { unresolved.push(line); return; }
+    const pairs = extractQuickNotePairs(dateInfo.rest);
+    if (pairs.length === 0) {
+      candidates.push({ tempId: genId(), date: dateInfo.iso, category: "", item: "", price: 0 });
+      return;
+    }
+    pairs.forEach((p) => {
+      candidates.push({
+        tempId: genId(),
+        date: dateInfo.iso,
+        category: guessCategoryId(p.item, categories),
+        item: p.item,
+        price: p.price,
+      });
+    });
+  });
+  return { candidates, unresolved };
+}
