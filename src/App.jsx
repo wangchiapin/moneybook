@@ -154,15 +154,22 @@ export default function App() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showQuickNote, setShowQuickNote] = useState(false);
   const [quickNoteDraft, setQuickNoteDraft] = useState("");
+  const [loadError, setLoadError] = useState(false);
+  const [slowLoad, setSlowLoad] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
+  const [synced, setSynced] = useState(false);
+  const [syncBlockedMsg, setSyncBlockedMsg] = useState(false);
   const initializedMonth = useRef(false);
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
 
   useEffect(() => {
     if (!user) return;
+    setLoadError(false);
     const ref = doc(db, "ledgers", user.uid);
     const unsub = onSnapshot(
       ref,
+      { includeMetadataChanges: true },
       (snap) => {
         const data = snap.data() || {};
         setExpenses(data.expenses || []);
@@ -180,24 +187,75 @@ export default function App() {
           initializedMonth.current = true;
         }
         setDataLoaded(true);
+        setLoadError(false);
+        // Only treat the data as safe to write on top of once it's confirmed
+        // to have come from the server (not a locally-cached copy) and there
+        // are no local writes still in flight — otherwise a write from this
+        // device could overwrite newer data from another device/session.
+        setSynced(!snap.metadata.fromCache && !snap.metadata.hasPendingWrites);
       },
-      () => setSaveError(true)
+      () => { setSaveError(true); setLoadError(true); }
     );
     return unsub;
-  }, [user]);
+  }, [user, retryTick]);
+
+  // If loading hangs with no error at all (e.g. a stalled connection that
+  // never actually fails), still give the user something actionable instead
+  // of an infinite "載入帳本中…" with no way out.
+  useEffect(() => {
+    if (dataLoaded) { setSlowLoad(false); return; }
+    const t = setTimeout(() => setSlowLoad(true), 8000);
+    return () => clearTimeout(t);
+  }, [dataLoaded, user, retryTick]);
+
+  const retryLoad = () => {
+    setLoadError(false);
+    setSlowLoad(false);
+    setRetryTick((t) => t + 1);
+  };
 
   useEffect(() => {
     document.title = appName;
   }, [appName]);
 
+  // Central choke point for every write in the app. Refuses to write while
+  // we haven't yet confirmed we're looking at the server's latest data, so
+  // this device can never merge a stale local copy on top of newer data
+  // saved from another device/session.
   const persist = useCallback(async (patch) => {
     if (!user) return;
+    if (!synced) {
+      setSyncBlockedMsg(true);
+      setTimeout(() => setSyncBlockedMsg(false), 1800);
+      return;
+    }
     try {
       await setDoc(doc(db, "ledgers", user.uid), { ...patch, updatedAt: Date.now() }, { merge: true });
     } catch (e) {
       setSaveError(true);
     }
-  }, [user]);
+  }, [user, synced]);
+
+  // Used to guard entry points into write flows (opening the add/quick-note
+  // sheets, editing an expense, opening Settings) so the user gets an
+  // immediate, clear "still syncing" message instead of filling out a form
+  // that then silently fails to save.
+  // Shared guard: returns true (and shows a brief toast) if a write should
+  // be blocked because we haven't confirmed we have the server's latest
+  // data yet. Used both to gate entry points (via requireSynced) and inside
+  // the write functions themselves, so local state is never optimistically
+  // updated only to be silently reverted a moment later.
+  const blockIfUnsynced = useCallback(() => {
+    if (synced) return false;
+    setSyncBlockedMsg(true);
+    setTimeout(() => setSyncBlockedMsg(false), 1800);
+    return true;
+  }, [synced]);
+
+  const requireSynced = useCallback((action) => {
+    if (blockIfUnsynced()) return;
+    action();
+  }, [blockIfUnsynced]);
 
   const verifyStatsPassword = async (attempt) => {
     const attemptHash = await sha256Hex(attempt);
@@ -210,24 +268,28 @@ export default function App() {
   };
 
   const setStatsPasswordPersist = async (newPlainPassword) => {
+    if (blockIfUnsynced()) return;
     const hash = await sha256Hex(newPlainPassword);
     setStatsPasswordHash(hash);
     persist({ statsPasswordHash: hash });
   };
 
   const addExpense = (entry) => {
+    if (blockIfUnsynced()) return;
     const next = [...expenses, { id: genId(), ...entry }];
     setExpenses(next);
     persist({ expenses: next });
     setShowAdd(false);
   };
   const deleteExpense = (id) => {
+    if (blockIfUnsynced()) return;
     const next = expenses.filter((e) => e.id !== id);
     setExpenses(next);
     persist({ expenses: next });
     setConfirmDeleteId(null);
   };
   const updateExpense = (id, patch) => {
+    if (blockIfUnsynced()) return;
     const next = expenses.map((e) => (e.id === id ? { ...e, ...patch } : e));
     setExpenses(next);
     persist({ expenses: next });
@@ -236,6 +298,7 @@ export default function App() {
   const getIncomeAmount = (month, sourceId) =>
     incomes.find((i) => i.month === month && i.source === sourceId)?.amount || 0;
   const saveIncome = (month, sourceId, amount) => {
+    if (blockIfUnsynced()) return;
     const others = incomes.filter((i) => !(i.month === month && i.source === sourceId));
     const next = amount !== 0 ? [...others, { id: genId(), month, source: sourceId, amount }] : others;
     setIncomes(next);
@@ -243,32 +306,39 @@ export default function App() {
     setEditingIncomeSrc(null);
   };
   const setCategoriesPersist = (next) => {
+    if (blockIfUnsynced()) return;
     setCategories(next);
     persist({ categories: next });
   };
   const setIncomeSourcesPersist = (next) => {
+    if (blockIfUnsynced()) return;
     setIncomeSources(next);
     persist({ incomeSources: next });
   };
   const setAppNamePersist = (next) => {
+    if (blockIfUnsynced()) return;
     const name = (next || "").trim() || DEFAULT_APP_NAME;
     setAppName(name);
     persist({ appName: name });
   };
   const setAiSettingsPersist = (next) => {
+    if (blockIfUnsynced()) return;
     setAiSettings(next);
     persist({ ai: next });
   };
   const setDataPersist = (nextExpenses, nextIncomes) => {
+    if (blockIfUnsynced()) return;
     setExpenses(nextExpenses);
     setIncomes(nextIncomes);
     persist({ expenses: nextExpenses, incomes: nextIncomes });
   };
   const setQuickNoteDraftPersist = (text) => {
+    if (blockIfUnsynced()) return;
     setQuickNoteDraft(text);
     persist({ quickNoteDraft: text });
   };
   const addQuickNoteExpenses = (candidates) => {
+    if (blockIfUnsynced()) return;
     const newExpenses = candidates.map((c) => ({
       id: genId(),
       date: c.date,
@@ -285,16 +355,19 @@ export default function App() {
 
   const addMonthlyNote = (month, text) => {
     if (!text.trim()) return;
+    if (blockIfUnsynced()) return;
     const next = [...monthlyNotes, { id: genId(), month, text: text.trim(), createdAt: Date.now() }];
     setMonthlyNotes(next);
     persist({ monthlyNotes: next });
   };
   const updateMonthlyNote = (id, text) => {
+    if (blockIfUnsynced()) return;
     const next = monthlyNotes.map((n) => (n.id === id ? { ...n, text: text.trim() } : n));
     setMonthlyNotes(next);
     persist({ monthlyNotes: next });
   };
   const deleteMonthlyNote = (id) => {
+    if (blockIfUnsynced()) return;
     const next = monthlyNotes.filter((n) => n.id !== id);
     setMonthlyNotes(next);
     persist({ monthlyNotes: next });
@@ -322,7 +395,19 @@ export default function App() {
   }
   if (user === null) return <LoginScreen />;
   if (!dataLoaded) {
-    return <div style={{ minHeight: "100vh", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", color: INK }}>載入帳本中…</div>;
+    return (
+      <div style={{ minHeight: "100vh", background: PAPER, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: INK, padding: 24, textAlign: "center", gap: 14 }}>
+        <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+          {loadError ? "載入帳本時發生問題，請確認網路連線" : slowLoad ? "載入時間有點久，可能是網路不穩" : "載入帳本中…"}
+        </div>
+        {(loadError || slowLoad) && (
+          <button onClick={retryLoad}
+            style={{ padding: "10px 22px", borderRadius: 12, border: "none", background: STAMP, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+            重試
+          </button>
+        )}
+      </div>
+    );
   }
 
   const { tw, greg } = monthLabel(viewMonth);
@@ -355,7 +440,7 @@ export default function App() {
             <button onClick={goHome} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <Home size={13} /> 回主頁（當月）
             </button>
-            <button onClick={() => { setSettingsSection("categories"); setShowSettings(true); }} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <button onClick={() => requireSynced(() => { setSettingsSection("categories"); setShowSettings(true); })} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
               <SettingsIcon size={13} /> 設定
             </button>
             <button onClick={() => signOut(auth)} style={{ background: "none", border: "none", color: "#B8AC91", fontSize: 12, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
@@ -366,6 +451,19 @@ export default function App() {
           {saveError && (
             <div style={{ background: "#F7E3D9", border: "1px solid #E0B49A", borderRadius: 10, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
               雲端同步時發生問題，請確認網路連線或 Firebase 設定。
+            </div>
+          )}
+
+          {!synced && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#F3ECDA", borderRadius: 10, padding: "6px 12px", fontSize: 11.5, color: "#8A8072", marginBottom: 12 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: STAMP, flexShrink: 0 }} />
+              同步中，新增/編輯功能會先暫停一下下
+            </div>
+          )}
+
+          {syncBlockedMsg && (
+            <div style={{ background: "#F7E3D9", border: "1px solid #E0B49A", borderRadius: 10, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
+              資料同步中，請稍等一下再試一次
             </div>
           )}
 
@@ -407,10 +505,10 @@ export default function App() {
             expenses={expenses} incomes={incomes} categories={categories} catMap={catMap} incomeSources={incomeSources}
             monthStats={monthStats} viewMonth={viewMonth}
             confirmDeleteId={confirmDeleteId} setConfirmDeleteId={setConfirmDeleteId} deleteExpense={deleteExpense}
-            editingIncomeSrc={editingIncomeSrc} setEditingIncomeSrc={setEditingIncomeSrc}
+            editingIncomeSrc={editingIncomeSrc} setEditingIncomeSrc={(src) => requireSynced(() => setEditingIncomeSrc(src))}
             incomeDraft={incomeDraft} setIncomeDraft={setIncomeDraft}
             getIncomeAmount={getIncomeAmount} saveIncome={saveIncome}
-            onEdit={(entry) => setEditingExpense(entry)}
+            onEdit={(entry) => requireSynced(() => setEditingExpense(entry))}
             monthlyNotes={monthlyNotes} addMonthlyNote={addMonthlyNote}
             updateMonthlyNote={updateMonthlyNote} deleteMonthlyNote={deleteMonthlyNote}
             categoryLockUnlocked={statsUnlocked} onUnlockCategoryLock={verifyStatsPassword}
@@ -435,25 +533,27 @@ export default function App() {
       </div>
 
       {tab === "ledger" && (
-        <button onClick={() => setShowQuickNote(true)} aria-label="隨手記"
+        <button onClick={() => requireSynced(() => setShowQuickNote(true))} aria-label="隨手記"
           style={{
             position: "fixed", bottom: 92, right: "50%", transform: "translateX(190px)",
             width: 56, height: 56, borderRadius: "50%", background: GOOD, color: "#fff",
             border: "none", boxShadow: "0 6px 16px rgba(63,125,92,0.4)", cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20,
             fontSize: 10.5, fontWeight: 700, lineHeight: 1.3, padding: 0,
+            opacity: synced ? 1 : 0.5,
           }}>
           隨手記
         </button>
       )}
 
       {tab === "ledger" && (
-        <button onClick={() => setShowAdd(true)} aria-label="新增支出"
+        <button onClick={() => requireSynced(() => setShowAdd(true))} aria-label="新增支出"
           style={{
             position: "fixed", bottom: 24, right: "50%", transform: "translateX(190px)",
             width: 56, height: 56, borderRadius: "50%", background: STAMP, color: "#fff",
             border: "none", boxShadow: "0 6px 16px rgba(163,53,42,0.4)", cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20,
+            opacity: synced ? 1 : 0.5,
           }}>
           <Plus size={26} />
         </button>

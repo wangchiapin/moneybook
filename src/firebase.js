@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from "firebase/firestore";
 
 // Paste your Firebase project's config here.
 // Firebase Console → Project settings → General → "Your apps" → SDK setup and configuration
@@ -16,4 +16,19 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Offline persistence (IndexedDB): lets the app show last-seen data
+// immediately on load instead of waiting on the network every time, which
+// is what makes "載入帳本中…" drag on, especially on mobile where the
+// browser tends to discard background tabs and force a full reload.
+// persistentSingleTabManager keeps this simple (one active tab owns the
+// cache) since this app isn't expected to run in multiple tabs at once.
+// IMPORTANT: this only affects how fast *reads* can show something on
+// screen. It does NOT by itself make it safe to write on top of that
+// cached data — App.jsx gates every write on Firestore's snapshot metadata
+// (fromCache / hasPendingWrites) before allowing a save, specifically so a
+// stale local cache can never overwrite newer data saved from another
+// device or session.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+});
