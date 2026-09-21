@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, getFirestore } from "firebase/firestore";
 
 // Paste your Firebase project's config here.
 // Firebase Console → Project settings → General → "Your apps" → SDK setup and configuration
@@ -29,6 +29,22 @@ export const auth = getAuth(app);
 // (fromCache / hasPendingWrites) before allowing a save, specifically so a
 // stale local cache can never overwrite newer data saved from another
 // device or session.
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
-});
+//
+// initializeFirestore() with persistentLocalCache can throw SYNCHRONOUSLY
+// in some browsers/modes — e.g. Safari private browsing, or a device with
+// storage access locked down — because it runs at module load time
+// (before React even starts), an uncaught throw here breaks the entire
+// app before anything renders (stuck on the very first loading screen,
+// same on every reload, with no way to recover). So this falls back to a
+// plain Firestore instance with no offline cache if that happens, trading
+// away the faster offline-first loading rather than breaking the app.
+let firestoreDb;
+try {
+  firestoreDb = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+  });
+} catch (e) {
+  console.warn("Firestore 離線快取無法啟用，改用一般模式（無離線快取）：", e);
+  firestoreDb = getFirestore(app);
+}
+export const db = firestoreDb;
