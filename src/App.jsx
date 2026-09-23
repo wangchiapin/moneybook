@@ -205,7 +205,17 @@ export default function App() {
           firstDataMarked.current = true;
           setPerf((p) => ({ ...p, firstData: performance.now() - PERF_T0 }));
         }
-        const isSynced = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+        // Only treat the data as safe to write on top of once it's confirmed
+        // to have come from the server (not a locally-cached copy) — that's
+        // the only situation where this device could be holding data that's
+        // stale relative to another device/session. A write of our own
+        // that's still in flight (hasPendingWrites) does NOT create that
+        // risk: the local state already reflects that write, so anything
+        // done next is still building on top of it, not overwriting it.
+        // Gating on hasPendingWrites too would just make every single
+        // add/edit force a wait for a round trip to the server before the
+        // next one is allowed, with no actual safety benefit.
+        const isSynced = !snap.metadata.fromCache;
         if (isSynced && !syncedMarked.current) {
           syncedMarked.current = true;
           setPerf((p) => ({ ...p, synced: performance.now() - PERF_T0 }));
@@ -227,10 +237,6 @@ export default function App() {
         }
         setDataLoaded(true);
         setLoadError(false);
-        // Only treat the data as safe to write on top of once it's confirmed
-        // to have come from the server (not a locally-cached copy) and there
-        // are no local writes still in flight — otherwise a write from this
-        // device could overwrite newer data from another device/session.
         setSynced(isSynced);
       },
       () => { setSaveError(true); setLoadError(true); }
