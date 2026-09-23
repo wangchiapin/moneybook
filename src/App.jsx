@@ -25,28 +25,6 @@ import AddExpenseSheet from "./AddExpenseSheet.jsx";
 import QuickNoteSheet from "./QuickNoteSheet.jsx";
 import SettingsModal from "./SettingsModal.jsx";
 
-// ⏱ TEMP DIAGNOSTIC — for tracking down why loading feels slow. Captures
-// how long each loading stage actually takes and shows it directly on
-// screen (no dev tools needed). Safe to delete once we're done diagnosing;
-// it only reads timing, it doesn't change any app behavior.
-const PERF_T0 = performance.now();
-
-function PerfDebugBadge({ perf }) {
-  const fmt = (v) => (v == null ? "…" : `${Math.round(v)}ms`);
-  return (
-    <div style={{
-      position: "fixed", top: 8, left: 8, right: 8, zIndex: 999,
-      background: "rgba(43,38,32,0.88)", color: "#F6F1E6",
-      borderRadius: 10, padding: "8px 10px", fontSize: 11,
-      fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.6,
-      textAlign: "center",
-    }}>
-      ⏱ 診斷（截圖傳給 Claude）<br />
-      驗證登入 {fmt(perf.auth)}｜首次資料 {fmt(perf.firstData)}｜伺服器確認 {fmt(perf.synced)}
-    </div>
-  );
-}
-
 const DEFAULT_AI_SETTINGS = { apiKey: "", model: "gemini-flash-latest" };
 
 // ---------- login screen ----------
@@ -181,15 +159,9 @@ export default function App() {
   const [retryTick, setRetryTick] = useState(0);
   const [synced, setSynced] = useState(false);
   const [syncBlockedMsg, setSyncBlockedMsg] = useState(false);
-  const [perf, setPerf] = useState({ auth: null, firstData: null, synced: null }); // ⏱ TEMP DIAGNOSTIC
-  const firstDataMarked = useRef(false); // ⏱ TEMP DIAGNOSTIC
-  const syncedMarked = useRef(false); // ⏱ TEMP DIAGNOSTIC
   const initializedMonth = useRef(false);
 
-  useEffect(() => onAuthStateChanged(auth, (u) => {
-    setUser(u);
-    setPerf((p) => (p.auth == null ? { ...p, auth: performance.now() - PERF_T0 } : p)); // ⏱ TEMP DIAGNOSTIC
-  }), []);
+  useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
 
   useEffect(() => {
     if (!user) return;
@@ -199,12 +171,6 @@ export default function App() {
       ref,
       { includeMetadataChanges: true },
       (snap) => {
-        // ⏱ TEMP DIAGNOSTIC — mark first time we get any data (cache or
-        // server), and separately the first time it's server-confirmed.
-        if (!firstDataMarked.current) {
-          firstDataMarked.current = true;
-          setPerf((p) => ({ ...p, firstData: performance.now() - PERF_T0 }));
-        }
         // Only treat the data as safe to write on top of once it's confirmed
         // to have come from the server (not a locally-cached copy) — that's
         // the only situation where this device could be holding data that's
@@ -216,10 +182,6 @@ export default function App() {
         // add/edit force a wait for a round trip to the server before the
         // next one is allowed, with no actual safety benefit.
         const isSynced = !snap.metadata.fromCache;
-        if (isSynced && !syncedMarked.current) {
-          syncedMarked.current = true;
-          setPerf((p) => ({ ...p, synced: performance.now() - PERF_T0 }));
-        }
         const data = snap.data() || {};
         setExpenses(data.expenses || []);
         setIncomes(data.incomes || []);
@@ -436,18 +398,12 @@ export default function App() {
   );
 
   if (user === undefined) {
-    return (
-      <div style={{ minHeight: "100vh", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", color: INK }}>
-        <PerfDebugBadge perf={perf} />
-        載入中…
-      </div>
-    );
+    return <div style={{ minHeight: "100vh", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", color: INK }}>載入中…</div>;
   }
   if (user === null) return <LoginScreen />;
   if (!dataLoaded) {
     return (
       <div style={{ minHeight: "100vh", background: PAPER, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: INK, padding: 24, textAlign: "center", gap: 14 }}>
-        <PerfDebugBadge perf={perf} />
         <div style={{ fontSize: 14, lineHeight: 1.7 }}>
           {loadError ? "載入帳本時發生問題，請確認網路連線" : slowLoad ? "載入時間有點久，可能是網路不穩" : "載入帳本中…"}
         </div>
@@ -465,7 +421,6 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: PAPER, color: INK, fontFamily: "'Noto Sans TC', sans-serif", paddingBottom: 96 }}>
-      <PerfDebugBadge perf={perf} />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
         .lg-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
