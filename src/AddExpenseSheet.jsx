@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { X, Camera, Loader2 } from "lucide-react";
-import { PAPER, STAMP, GOOD, todayISO, monthKeyOf } from "./lib.js";
+import { PAPER, STAMP, GOOD, todayISO, monthKeyOf, parsePriceInput } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
 import { callGeminiVision, parseJsonLoose } from "./gemini.js";
 
@@ -15,6 +15,7 @@ export default function AddExpenseSheet({ viewMonth, categories, initialEntry, a
   const [item, setItem] = useState(initialEntry?.item || "");
   const [price, setPrice] = useState(initialEntry ? String(initialEntry.price) : "");
   const [note, setNote] = useState(initialEntry?.note || "");
+  const [calcMode, setCalcMode] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanNotice, setScanNotice] = useState("");
@@ -22,10 +23,16 @@ export default function AddExpenseSheet({ viewMonth, categories, initialEntry, a
 
   const hasKey = !!(aiSettings?.apiKey && aiSettings.apiKey.trim());
 
-  const canSubmit = !!category;
+  const priceParsed = parsePriceInput(price);
+  const canSubmit = !!category && priceParsed.ok;
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit({ date, category, item: item.trim(), price: price === "" ? 0 : Number(price), note: note.trim() }, initialEntry?.id);
+    onSubmit({ date, category, item: item.trim(), price: priceParsed.value, note: note.trim() }, initialEntry?.id);
+  };
+  // 離開金額欄時，若是算式就直接換成算出來的數字
+  const commitPrice = () => {
+    if (priceParsed.ok && priceParsed.isExpr) setPrice(String(priceParsed.value));
+    setCalcMode(false);
   };
 
   const handleScan = async (file) => {
@@ -109,8 +116,24 @@ export default function AddExpenseSheet({ viewMonth, categories, initialEntry, a
         <label style={fieldLabel}>項目</label>
         <input type="text" placeholder="例如：晚餐、UBike、咖啡" value={item} onChange={(e) => setItem(e.target.value)} style={inputStyle} />
 
-        <label style={fieldLabel}>金額</label>
-        <input type="number" inputMode="numeric" placeholder="0" value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: 18 }} />
+        <label style={fieldLabel}>金額（可輸入 =100-10 這類算式）</label>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <input type="text" inputMode={calcMode ? "text" : "decimal"} placeholder="0" value={price}
+            onChange={(e) => setPrice(e.target.value)} onBlur={commitPrice}
+            style={{ ...inputStyle, marginBottom: priceParsed.isExpr || !priceParsed.ok ? 4 : 14, fontFamily: "'JetBrains Mono', monospace", fontSize: 18, flex: 1 }} />
+          <button type="button" onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setCalcMode(true); if (!String(price).trim().startsWith("=")) setPrice("=" + (price || "")); }}
+            style={{ border: `1px solid ${STAMP}`, background: `${STAMP}0F`, color: STAMP, borderRadius: 12, width: 44, height: 43, fontSize: 20, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>=</button>
+        </div>
+        {priceParsed.isExpr && priceParsed.ok && (
+          <div style={{ fontSize: 12.5, color: GOOD, margin: "0 2px 14px", fontFamily: "'JetBrains Mono', monospace" }}>= {priceParsed.value}</div>
+        )}
+        {!priceParsed.ok && priceParsed.error && priceParsed.error !== "empty" && (
+          <div style={{ fontSize: 12, color: STAMP, margin: "0 2px 14px" }}>{priceParsed.error}</div>
+        )}
+        {!priceParsed.ok && priceParsed.error === "empty" && (
+          <div style={{ fontSize: 12, color: "#8A8072", margin: "0 2px 14px" }}>在 = 後面輸入算式，例如 =100-10</div>
+        )}
 
         <label style={fieldLabel}>備註（選填）</label>
         <input type="text" value={note} onChange={(e) => setNote(e.target.value)} style={inputStyle} />

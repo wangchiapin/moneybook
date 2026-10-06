@@ -207,3 +207,80 @@ export function parseQuickNoteText(rawText, todayIso, categories) {
   });
   return { candidates, unresolved };
 }
+
+// ---- 金額欄算式：輸入 "=100-10" 可算出 90 ----
+// 不使用 eval，改用小型遞迴解析器，只接受 + - × ÷ * / 括號與數字。
+function normalizeCalcText(s) {
+  return String(s)
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/＝/g, "=").replace(/＋/g, "+").replace(/[－—–−]/g, "-")
+    .replace(/[×＊xX]/g, "*").replace(/[÷／]/g, "/")
+    .replace(/（/g, "(").replace(/）/g, ")").replace(/．/g, ".")
+    .replace(/[,，\s]/g, "");
+}
+
+function evalArithmetic(src) {
+  let i = 0;
+  const peek = () => src[i];
+  function number() {
+    const m = /^\d+(\.\d+)?|^\.\d+/.exec(src.slice(i));
+    if (!m) throw new Error("num");
+    i += m[0].length;
+    return Number(m[0]);
+  }
+  function factor() {
+    if (peek() === "-") { i++; return -factor(); }
+    if (peek() === "+") { i++; return factor(); }
+    if (peek() === "(") {
+      i++;
+      const v = expr();
+      if (peek() !== ")") throw new Error("paren");
+      i++;
+      return v;
+    }
+    return number();
+  }
+  function term() {
+    let v = factor();
+    while (peek() === "*" || peek() === "/") {
+      const op = src[i++];
+      const r = factor();
+      if (op === "/" && r === 0) throw new Error("div0");
+      v = op === "*" ? v * r : v / r;
+    }
+    return v;
+  }
+  function expr() {
+    let v = term();
+    while (peek() === "+" || peek() === "-") {
+      const op = src[i++];
+      const r = term();
+      v = op === "+" ? v + r : v - r;
+    }
+    return v;
+  }
+  const result = expr();
+  if (i !== src.length) throw new Error("trailing");
+  return result;
+}
+
+// 回傳 { ok, value, isExpr, error }
+// 空白 → 0（沿用原本行為）；純數字 → 該數字；以 "=" 開頭 → 算式結果（四捨五入到小數 2 位）
+export function parsePriceInput(raw) {
+  const s = normalizeCalcText(raw ?? "");
+  if (s === "") return { ok: true, value: 0, isExpr: false };
+  if (s[0] === "=") {
+    const body = s.slice(1);
+    if (body === "") return { ok: false, isExpr: true, error: "empty" };
+    try {
+      const v = evalArithmetic(body);
+      if (!Number.isFinite(v)) return { ok: false, isExpr: true, error: "算式有誤" };
+      if (v < 0) return { ok: false, isExpr: true, error: "結果不能是負數" };
+      return { ok: true, value: Math.round(v * 100) / 100, isExpr: true };
+    } catch (e) {
+      return { ok: false, isExpr: true, error: e.message === "div0" ? "不能除以 0" : "算式有誤" };
+    }
+  }
+  if (/^\d*\.?\d*$/.test(s) && /\d/.test(s)) return { ok: true, value: Number(s), isExpr: false };
+  return { ok: false, isExpr: false, error: "請輸入數字，或以 = 開頭輸入算式" };
+}
