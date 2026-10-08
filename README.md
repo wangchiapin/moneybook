@@ -1,5 +1,17 @@
 # 生活帳本
 
+> Excel 風格的記帳網頁，資料同步 Firestore，電腦與手機共用
+
+- **網址：** https://wangchiapin.github.io/moneybook/
+- **Firebase 專案：** moneybook-50481
+- **登入方式：** Email / 密碼
+- **狀態：** 使用中
+- **備註：** React + Vite，以 GitHub Actions 部署。同專案的其他 repo：`All-MoneyBook`、`cadadiaunosminutos`、`travelaccount`。
+
+---
+
+# 生活帳本
+
 依你原本 Excel 記帳表格式做的網頁記帳工具，資料存在 Firebase Firestore，電腦、手機都能開，登入同一個帳號資料就會同步。
 
 ## 一、設定 Firebase（約 5 分鐘）
