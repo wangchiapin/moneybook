@@ -89,6 +89,7 @@ export default function LedgerTab({
               {g.items.map((it) => {
                 const cat = catMap[it.category] || { name: it.category || "未分類", color: "#999" };
                 const confirming = confirmDeleteId === it.id;
+                const zeroPrice = !(Number(it.price) > 0);
                 const pending = it.quickNoteOrigin && (!it.category || !String(it.item || "").trim() || !(Number(it.price) > 0));
                 return (
                   <div
@@ -98,7 +99,7 @@ export default function LedgerTab({
                   >
                     <CatDot color={cat.color} size={9} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.item || cat.name}</div>
+                      <div style={{ fontSize: 14, fontWeight: zeroPrice ? 700 : 500, color: zeroPrice ? STAMP : undefined, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.item || cat.name}</div>
                       <div style={{ fontSize: 11, color: "#A79C89" }}>{cat.name}{it.note ? ` · ${it.note}` : ""}{pending ? " · 待確認" : ""}</div>
                     </div>
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600 }}>${fmt(it.price)}</span>

@@ -89,7 +89,7 @@ export default function SearchTab({ expenses, categories, catMap }) {
                   <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "1px solid #F3ECDA" }}>
                     <CatDot color={cat.color} size={9} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.item || cat.name}</div>
+                      <div style={{ fontSize: 14, fontWeight: !(Number(it.price) > 0) ? 700 : 500, color: !(Number(it.price) > 0) ? STAMP : undefined, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.item || cat.name}</div>
                       <div style={{ fontSize: 11, color: "#A79C89" }}>{dateLabel(it.date)} · {cat.name}{it.note ? ` · ${it.note}` : ""}</div>
                     </div>
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600 }}>${fmt(it.price)}</span>
