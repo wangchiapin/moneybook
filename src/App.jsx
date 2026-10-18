@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Plus, ChevronLeft, ChevronRight, BarChart3, BookText,
-  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut, Home, Sparkles, X,
+  LineChart as LineChartIcon, Search as SearchIcon, Settings as SettingsIcon, LogOut, Home, X,
 } from "lucide-react";
 import { auth, db } from "./firebase.js";
 import {
@@ -20,7 +20,6 @@ import LedgerTab from "./LedgerTab.jsx";
 import StatsTab from "./StatsTab.jsx";
 import ChartsTab from "./ChartsTab.jsx";
 import SearchTab from "./SearchTab.jsx";
-import AITab from "./AITab.jsx";
 import AddExpenseSheet from "./AddExpenseSheet.jsx";
 import QuickNoteSheet from "./QuickNoteSheet.jsx";
 import SettingsModal from "./SettingsModal.jsx";
@@ -126,7 +125,6 @@ const TABS = [
   ["stats", "統計", BarChart3],
   ["charts", "圖表", LineChartIcon],
   ["search", "搜尋", SearchIcon],
-  ["ai", "AI", Sparkles],
 ];
 
 export default function App() {
@@ -529,13 +527,6 @@ export default function App() {
         )}
         {tab === "search" && (
           <SearchTab expenses={expenses} categories={categories} catMap={catMap} />
-        )}
-        {tab === "ai" && (
-          <AITab
-            expenses={expenses} incomes={incomes} categories={categories} incomeSources={incomeSources} viewMonth={viewMonth}
-            aiSettings={aiSettings}
-            onOpenSettings={() => { setSettingsSection("ai"); setShowSettings(true); }}
-          />
         )}
       </div>
 

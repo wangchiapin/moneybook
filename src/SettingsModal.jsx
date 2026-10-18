@@ -11,7 +11,7 @@ const SECTION_TABS = [
   ["categories", "分類管理"],
   ["income", "收入來源"],
   ["data", "備份與匯入"],
-  ["ai", "AI 分析"],
+  ["ai", "發票辨識"],
   ["lock", "修改密碼"],
 ];
 
@@ -353,7 +353,7 @@ export default function SettingsModal({
         {section === "ai" && (
           <div>
             <div style={{ fontSize: 12, color: "#8A8072", lineHeight: 1.6, marginBottom: 14 }}>
-              到 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: STAMP }}>Google AI Studio</a> 免費申請一組 API 金鑰貼在這裡，就能在「AI 分析」分頁請 Gemini 幫你看支出、給建議。申請時建議把金鑰限制成只能從你的網站網域呼叫，比較安全。
+              到 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: STAMP }}>Google AI Studio</a> 免費申請一組 API 金鑰貼在這裡，就能在記一筆時拍照或上傳發票，請 Gemini 自動帶入內容。申請時建議把金鑰限制成只能從你的網站網域呼叫，比較安全。
             </div>
             <label style={{ display: "block", fontSize: 11.5, color: "#8A8072", fontWeight: 700, marginBottom: 6 }}>Gemini API 金鑰</label>
             <input
