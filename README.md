@@ -14,19 +14,29 @@
 
 依你原本 Excel 記帳表格式做的網頁記帳工具，資料存在 Firebase Firestore，電腦、手機都能開，登入同一個帳號資料就會同步。
 
-## 一、設定 Firebase（約 5 分鐘）
+## 目前的功能與資料放哪裡
+
+- 分頁：記帳（逐月支出、收入、月備註）、統計、圖表、搜尋；另有「隨手記」快速輸入、「記一筆」可用發票照片辨識（Gemini，金鑰在設定裡的「發票辨識」）、設定（分類、收入來源、匯入匯出、統計頁密碼）。
+- 資料放在 Firestore 的 **`ledgers/{你的帳號 uid}` 這一份文件**，裡面有支出、收入、分類、收入來源、月備註、設定等欄位。
+- 「華語文教學」這個收入來源是從教學紀錄 App 自動同步進來的，這裡只能看、不能改。
+
+## 一、設定 Firebase（想用自己的專案時才需要，約 5 分鐘）
+
+> 這個 repo 目前已經接在 `moneybook-50481` 專案上，`src/firebase.js` 裡的設定是填好的，**平常不用做這一節**。
 
 1. 到 [Firebase Console](https://console.firebase.google.com/) 建立一個新專案。
 2. 左側選單「Build → Authentication」→「Get started」→ 啟用「Email/Password」登入方式。
 3. 左側選單「Build → Firestore Database」→「Create database」→ 選 production mode，地區選 asia-east1（或任一）。
-4. 建立好之後，點左側「Firestore Database → 規則」，把內容換成本專案根目錄的 `firestore.rules`（貼上後按發布）。
+4. 建立好之後，點左側「Firestore Database → 規則」，貼上規則後按發布。
+   - ⚠️ **本專案根目錄的 `firestore.rules` 是 `moneybook-50481` 專案「完整」的規則**，這個專案同時給生活帳本、財務資產 All-MoneyBook、華語課表／收入、旅費帳本使用，而 Firebase 一個專案只有一份規則。所以要發布就貼**整份**，不能只貼其中一段，否則其他網站會被擋住。
+   - 如果是全新的專案，只需要保留 `ledgers/{uid}` 那一段。
 5. 左側選單「專案設定」（齒輪圖示）→ 往下捲到「我的應用程式」→ 點 網頁圖示 `</>` 新增一個網頁應用程式 → 註冊後會看到一段 `firebaseConfig`。
-6. 把那段設定值貼到 `src/firebase.js` 裡取代 `YOUR_API_KEY` 等等的佔位字。
+6. 把那段設定值貼到 `src/firebase.js` 裡，取代原本的設定。
 
 ## 二、上傳到 GitHub
 
 ```bash
-cd ledger-app
+cd moneybook
 git init
 git add .
 git commit -m "init"
@@ -39,7 +49,7 @@ git push -u origin main
 
 1. 打開你 GitHub 上的 repo → Settings → Pages。
 2. 「Build and deployment → Source」選 **GitHub Actions**。
-3. 打開 `vite.config.js`，把 `base: "/ledger-app/"` 改成 `base: "/你的repo名稱/"`（要跟 repo 名稱完全一致），存檔後 commit + push。
+3. 打開 `vite.config.js`，確認 `base` 跟 repo 名稱完全一致（這個 repo 叫 `moneybook`，所以是 `base: "/moneybook/"`；換了 repo 名稱就要跟著改），存檔後 commit + push。
 4. push 到 `main` 分支後，repo 的 Actions 分頁會自動跑建置流程，跑完後網址會是：
    `https://你的帳號.github.io/你的repo名稱/`
 
@@ -60,7 +70,8 @@ npm run dev
 
 ## 檔案說明
 
-- `src/App.jsx`：主要畫面與邏輯
-- `src/firebase.js`：Firebase 連線設定（要填自己的 config）
-- `firestore.rules`：資料庫安全規則，只允許登入者存取自己的資料
+- `src/App.jsx`：主要畫面與邏輯（也負責讀寫 Firestore）
+- `src/lib.js`：金額、日期、統計、隨手記解析等共用計算
+- `src/firebase.js`：Firebase 連線設定（目前是 `moneybook-50481`）
+- `firestore.rules`：`moneybook-50481` 專案的完整資料庫安全規則（多個網站共用，只允許登入者存取自己的資料）
 - `.github/workflows/deploy.yml`：自動部署到 GitHub Pages 的流程

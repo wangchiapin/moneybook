@@ -1,9 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// IMPORTANT: change "ledger-app" below to match your GitHub repo name.
-// e.g. if your repo is https://github.com/yourname/my-book,
-// base should be "/my-book/"
+// base 要跟 GitHub repo 名稱完全一致（網址是 https://帳號.github.io/repo名稱/）。
+// 這個 repo 叫 moneybook，所以是 "/moneybook/"；如果改了 repo 名稱，這裡也要跟著改。
 export default defineConfig({
   plugins: [react()],
   base: "/moneybook/",

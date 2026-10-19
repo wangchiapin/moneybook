@@ -75,7 +75,7 @@ export default function StatsTab({ expenses, incomes, categories, incomeSources,
             <tr>
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 2 }}>月份</th>
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1, textAlign: "center" }}>備註</th>
-              {categories.map((c) => (<th key={c.id} style={{ ...thStyle, color: c.color, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>{c.id}</th>))}
+              {categories.map((c) => (<th key={c.id} style={{ ...thStyle, color: c.color, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>{c.name}</th>))}
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>總計</th>
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>支出總計－卡費</th>
               <th style={{ ...thStyle, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>收入</th>

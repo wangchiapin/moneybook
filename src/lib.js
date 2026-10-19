@@ -141,6 +141,12 @@ const QUICK_NOTE_DATE_PATTERNS = [
   { re: /^(\d{2})(\d{2})(?!\d)/, kind: "mmdd" },
 ];
 
+// 這個日期真的存在嗎？（例如 2 月 31 日、4 月 31 日不存在）
+function isRealDate(y, mo, d) {
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
 function extractQuickNoteDate(line, todayIso) {
   for (const { re, kind } of QUICK_NOTE_DATE_PATTERNS) {
     const m = line.match(re);
@@ -152,8 +158,16 @@ function extractQuickNoteDate(line, todayIso) {
       y = Number(m[1]) + 1911; mo = Number(m[2]); d = Number(m[3]);
     } else {
       y = Number(todayIso.slice(0, 4)); mo = Number(m[1]); d = Number(m[2]);
+      // 只寫月日、沒寫年：如果算出來比今天晚超過 31 天，應該是補記去年的帳
+      // （例如一月補記 12 月的帳，不能記成「今年 12 月」的未來日期）
+      if (isRealDate(y, mo, d)) {
+        const [ty, tm, td] = todayIso.split("-").map(Number);
+        const diffDays = (Date.UTC(y, mo - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000;
+        if (diffDays > 31) y -= 1;
+      }
     }
-    if (mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    // 日期要真的存在（0231 這種不存在的日期不猜，整行留在「看不懂的內容」讓使用者自己改）
+    if (!isRealDate(y, mo, d)) continue;
     return { iso: `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`, rest: line.slice(m[0].length).trim() };
   }
   return null;
@@ -163,20 +177,31 @@ function extractQuickNoteDate(line, todayIso) {
 // e.g. "早餐 500 午餐300 晚餐600" → three pairs. A trailing item with no
 // number after it still becomes a pair with price 0 (flagged incomplete
 // later), rather than being dropped.
+//
+// 數字什麼時候「不算金額」：
+//   - 千分位的逗號先拿掉，"午餐 1,200" 就是 1200（不會拆成 1 和 200 兩筆）
+//   - 連著連字號的數字（7-11、24-7）是店名、不是金額
+//   - 後面緊接英文字母的數字（3C、100g）是型號或規格、不是金額
+//   - 金額後面緊接的「元／塊／圓」會一起吃掉，不會變成多出來的一筆
 function extractQuickNotePairs(rest) {
+  const text = String(rest).replace(/(\d),(?=\d{3}(?!\d))/g, "$1");
   const pairs = [];
-  const re = /([^\d]*?)(\d+(?:\.\d+)?)/g;
+  const re = /\d+(?:\.\d+)?/g;
   let m;
-  let lastIndex = 0;
-  while ((m = re.exec(rest)) !== null) {
-    const item = m[1].trim();
-    const price = Number(m[2]);
-    pairs.push({ item, price });
-    lastIndex = re.lastIndex;
+  let itemStart = 0;   // 目前這一筆的項目文字從哪裡開始
+  while ((m = re.exec(text)) !== null) {
+    const prev = text[m.index - 1] || "";
+    const next = text[m.index + m[0].length] || "";
+    if (prev === "-" || next === "-" || /[A-Za-z]/.test(next)) continue;   // 店名、型號裡的數字，留在項目文字裡
+    pairs.push({ item: text.slice(itemStart, m.index).trim(), price: Number(m[0]) });
+    let end = m.index + m[0].length;
+    if (/[元塊圓]/.test(text[end] || "")) end += 1;
+    re.lastIndex = end;
+    itemStart = end;
   }
-  const trailing = rest.slice(lastIndex).trim();
+  const trailing = text.slice(itemStart).trim();
   if (trailing) pairs.push({ item: trailing, price: 0 });
-  if (pairs.length === 0 && rest.trim()) pairs.push({ item: rest.trim(), price: 0 });
+  if (pairs.length === 0 && text.trim()) pairs.push({ item: text.trim(), price: 0 });
   return pairs;
 }
 
