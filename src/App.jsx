@@ -8,7 +8,8 @@ import {
   onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut,
 } from "firebase/auth";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
+import { monthsCol, flattenMonthDocs, buildOps, writeOps, migrateLegacyExpenses } from "./monthStore.js";
 
 import {
   DEFAULT_CATEGORIES, DEFAULT_INCOME_SOURCES, DEFAULT_APP_NAME, INK, PAPER, PAPER_DEEP, STAMP, GOOD,
@@ -157,7 +158,14 @@ export default function App() {
   const [retryTick, setRetryTick] = useState(0);
   const [synced, setSynced] = useState(false);
   const [syncBlockedMsg, setSyncBlockedMsg] = useState(false);
+  const [monthsLoaded, setMonthsLoaded] = useState(false);   // 每月支出文件是否已經讀到（離線時讀到快取也算）
+  const [monthsSynced, setMonthsSynced] = useState(false);   // 是否已經確認是伺服器上的最新資料
+  const [legacyExpenses, setLegacyExpenses] = useState([]);  // 主文件裡還沒搬家的舊支出
+  const [migrateState, setMigrateState] = useState("idle");  // idle | running | failed
+  const [migrateError, setMigrateError] = useState("");
   const initializedMonth = useRef(false);
+  const expensesRef = useRef([]);  // 永遠指向最新的支出清單，連續快速操作時才不會算錯差異
+  expensesRef.current = expenses;
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
 
@@ -181,7 +189,8 @@ export default function App() {
         // next one is allowed, with no actual safety benefit.
         const isSynced = !snap.metadata.fromCache;
         const data = snap.data() || {};
-        setExpenses(data.expenses || []);
+        // 支出已改放在 ledgers/{uid}/months（見 monthStore.js）；主文件裡如果還有 expenses 陣列，是還沒搬家的舊資料
+        setLegacyExpenses(Array.isArray(data.expenses) ? data.expenses : []);
         setIncomes(data.incomes || []);
         setCategories(data.categories && data.categories.length ? data.categories : DEFAULT_CATEGORIES);
         setIncomeSources(data.incomeSources && data.incomeSources.length ? data.incomeSources : DEFAULT_INCOME_SOURCES);
@@ -190,11 +199,6 @@ export default function App() {
         setMonthlyNotes(data.monthlyNotes || []);
         setStatsPasswordHash(data.statsPasswordHash || null);
         setQuickNoteDraft(data.quickNoteDraft || "");
-        if (!initializedMonth.current && (data.expenses || []).length) {
-          const dates = data.expenses.map((e) => e.date).sort();
-          setViewMonth(monthKeyOf(dates[dates.length - 1]));
-          initializedMonth.current = true;
-        }
         setDataLoaded(true);
         setLoadError(false);
         setSynced(isSynced);
@@ -204,14 +208,55 @@ export default function App() {
     return unsub;
   }, [user, retryTick]);
 
+  // 每月支出文件：監聽整個 months 集合，把每個月的 items 合成一份清單
+  useEffect(() => {
+    if (!user) return;
+    setMonthsLoaded(false);
+    setMonthsSynced(false);
+    const unsub = onSnapshot(
+      monthsCol(db, user.uid),
+      { includeMetadataChanges: true },
+      (snap) => {
+        const list = flattenMonthDocs(snap.docs.map((d) => ({ id: d.id, data: d.data() })));
+        setExpenses(list);
+        if (!initializedMonth.current && list.length) {
+          setViewMonth(monthKeyOf(list[list.length - 1].date));
+          initializedMonth.current = true;
+        }
+        setMonthsLoaded(true);
+        setMonthsSynced(!snap.metadata.fromCache);
+      },
+      () => { setSaveError(true); setLoadError(true); }
+    );
+    return unsub;
+  }, [user, retryTick]);
+
+  // 舊資料搬家（只會做一次；也會順便收拾「舊版網頁在別台裝置又寫回來」的零星資料）
+  const migratingRef = useRef(false);
+  useEffect(() => {
+    if (!user || !synced || !monthsSynced || legacyExpenses.length === 0) return;
+    if (migratingRef.current || migrateState === "failed" || migrateState === "done") return;
+    migratingRef.current = true;
+    setMigrateState("running");
+    setMigrateError("");
+    migrateLegacyExpenses(db, user.uid, legacyExpenses, setDoc, updateDoc, doc(db, "ledgers", user.uid))
+      .then(() => { setMigrateState("done"); })
+      .catch((e) => {
+        console.error("支出搬家失敗", e);
+        setMigrateError(String((e && e.message) || e));
+        setMigrateState("failed");
+      })
+      .finally(() => { migratingRef.current = false; });
+  }, [user, synced, monthsSynced, legacyExpenses, migrateState]);
+
   // If loading hangs with no error at all (e.g. a stalled connection that
   // never actually fails), still give the user something actionable instead
   // of an infinite "載入帳本中…" with no way out.
   useEffect(() => {
-    if (dataLoaded) { setSlowLoad(false); return; }
+    if (dataLoaded && monthsLoaded) { setSlowLoad(false); return; }
     const t = setTimeout(() => setSlowLoad(true), 8000);
     return () => clearTimeout(t);
-  }, [dataLoaded, user, retryTick]);
+  }, [dataLoaded, monthsLoaded, user, retryTick]);
 
   const retryLoad = () => {
     setLoadError(false);
@@ -240,6 +285,22 @@ export default function App() {
       setSaveError(true);
     }
   }, [user, synced]);
+
+  // 支出的寫入：只寫「有變的那幾筆、那幾格」，不再整份陣列覆蓋，所以離線也可以記帳，
+  // 連上網路後 Firestore 會自動補送；也不會蓋掉別台裝置記的其他筆。
+  const persistExpenses = useCallback(async (next) => {
+    if (!user) return;
+    const prev = expensesRef.current;
+    const ops = buildOps(prev, next);
+    if (!ops.length) return;
+    expensesRef.current = next;
+    try {
+      await writeOps(db, user.uid, ops);
+    } catch (e) {
+      console.error("支出寫入失敗", e);
+      setSaveError(true);
+    }
+  }, [user]);
 
   // Used to guard entry points into write flows (opening the add/quick-note
   // sheets, editing an expense, opening Settings) so the user gets an
@@ -280,24 +341,21 @@ export default function App() {
   };
 
   const addExpense = (entry) => {
-    if (blockIfUnsynced()) return;
-    const next = [...expenses, { id: genId(), ...entry }];
+    const next = [...expensesRef.current, { id: genId(), ...entry }];
     setExpenses(next);
-    persist({ expenses: next });
+    persistExpenses(next);
     setShowAdd(false);
   };
   const deleteExpense = (id) => {
-    if (blockIfUnsynced()) return;
-    const next = expenses.filter((e) => e.id !== id);
+    const next = expensesRef.current.filter((e) => e.id !== id);
     setExpenses(next);
-    persist({ expenses: next });
+    persistExpenses(next);
     setConfirmDeleteId(null);
   };
   const updateExpense = (id, patch) => {
-    if (blockIfUnsynced()) return;
-    const next = expenses.map((e) => (e.id === id ? { ...e, ...patch } : e));
+    const next = expensesRef.current.map((e) => (e.id === id ? { ...e, ...patch } : e));
     setExpenses(next);
-    persist({ expenses: next });
+    persistExpenses(next);
     setEditingExpense(null);
   };
   const getIncomeAmount = (month, sourceId) =>
@@ -335,7 +393,8 @@ export default function App() {
     if (blockIfUnsynced()) return;
     setExpenses(nextExpenses);
     setIncomes(nextIncomes);
-    persist({ expenses: nextExpenses, incomes: nextIncomes });
+    persistExpenses(nextExpenses);
+    persist({ incomes: nextIncomes });
   };
   const setQuickNoteDraftPersist = (text) => {
     if (blockIfUnsynced()) return;
@@ -343,7 +402,6 @@ export default function App() {
     persist({ quickNoteDraft: text });
   };
   const addQuickNoteExpenses = (candidates) => {
-    if (blockIfUnsynced()) return;
     const newExpenses = candidates.map((c) => ({
       id: genId(),
       date: c.date,
@@ -353,9 +411,9 @@ export default function App() {
       note: "",
       quickNoteOrigin: true,
     }));
-    const next = [...expenses, ...newExpenses];
+    const next = [...expensesRef.current, ...newExpenses];
     setExpenses(next);
-    persist({ expenses: next });
+    persistExpenses(next);
   };
 
   const addMonthlyNote = (month, text) => {
@@ -399,7 +457,32 @@ export default function App() {
     return <div style={{ minHeight: "100vh", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", color: INK }}>載入中…</div>;
   }
   if (user === null) return <LoginScreen />;
-  if (!dataLoaded) {
+  if (migrateState === "failed") {
+    return (
+      <div style={{ minHeight: "100vh", background: PAPER, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: INK, padding: 24, textAlign: "center", gap: 14 }}>
+        <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+          帳本資料升級沒有完成（你的帳都還在，什麼都沒有被刪掉）。<br />
+          <span style={{ fontSize: 12, color: "#8A8072" }}>{migrateError}</span>
+        </div>
+        <button onClick={() => { setMigrateState("idle"); }}
+          style={{ padding: "10px 22px", borderRadius: 12, border: "none", background: STAMP, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+          再試一次
+        </button>
+      </div>
+    );
+  }
+  if (dataLoaded && monthsLoaded && legacyExpenses.length > 0 && migrateState !== "done") {
+    return (
+      <div style={{ minHeight: "100vh", background: PAPER, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: INK, padding: 24, textAlign: "center", gap: 14 }}>
+        <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+          {synced && monthsSynced
+            ? "正在升級帳本的存放方式（只需要一次，請不要關閉頁面）…"
+            : "帳本的存放方式需要升級，請先連上網路（只需要一次）"}
+        </div>
+      </div>
+    );
+  }
+  if (!dataLoaded || !monthsLoaded) {
     return (
       <div style={{ minHeight: "100vh", background: PAPER, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: INK, padding: 24, textAlign: "center", gap: 14 }}>
         <div style={{ fontSize: 14, lineHeight: 1.7 }}>
@@ -462,7 +545,7 @@ export default function App() {
           {!synced && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#F3ECDA", borderRadius: 10, padding: "6px 12px", fontSize: 11.5, color: "#8A8072", marginBottom: 12 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: STAMP, flexShrink: 0 }} />
-              同步中，新增/編輯功能會先暫停一下下
+              正在跟雲端核對最新資料；現在記的帳會先存起來，連上網路後自動送出（設定、收入欄位要等核對完才能改）
             </div>
           )}
 
@@ -513,7 +596,7 @@ export default function App() {
             editingIncomeSrc={editingIncomeSrc} setEditingIncomeSrc={(src) => requireSynced(() => setEditingIncomeSrc(src))}
             incomeDraft={incomeDraft} setIncomeDraft={setIncomeDraft}
             getIncomeAmount={getIncomeAmount} saveIncome={saveIncome}
-            onEdit={(entry) => requireSynced(() => setEditingExpense(entry))}
+            onEdit={(entry) => setEditingExpense(entry)}
             monthlyNotes={monthlyNotes} addMonthlyNote={addMonthlyNote}
             updateMonthlyNote={updateMonthlyNote} deleteMonthlyNote={deleteMonthlyNote}
             categoryLockUnlocked={statsUnlocked} onUnlockCategoryLock={verifyStatsPassword}
@@ -531,27 +614,25 @@ export default function App() {
       </div>
 
       {tab === "ledger" && (
-        <button onClick={() => requireSynced(() => setShowQuickNote(true))} aria-label="隨手記"
+        <button onClick={() => setShowQuickNote(true)} aria-label="隨手記"
           style={{
             position: "fixed", bottom: 92, right: "50%", transform: "translateX(190px)",
             width: 56, height: 56, borderRadius: "50%", background: GOOD, color: "#fff",
             border: "none", boxShadow: "0 6px 16px rgba(63,125,92,0.4)", cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20,
             fontSize: 10.5, fontWeight: 700, lineHeight: 1.3, padding: 0,
-            opacity: synced ? 1 : 0.5,
           }}>
           隨手記
         </button>
       )}
 
       {tab === "ledger" && (
-        <button onClick={() => requireSynced(() => setShowAdd(true))} aria-label="新增支出"
+        <button onClick={() => setShowAdd(true)} aria-label="新增支出"
           style={{
             position: "fixed", bottom: 24, right: "50%", transform: "translateX(190px)",
             width: 56, height: 56, borderRadius: "50%", background: STAMP, color: "#fff",
             border: "none", boxShadow: "0 6px 16px rgba(163,53,42,0.4)", cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20,
-            opacity: synced ? 1 : 0.5,
           }}>
           <Plus size={26} />
         </button>
