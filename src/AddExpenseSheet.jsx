@@ -1,10 +1,63 @@
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { X, Camera, Loader2 } from "lucide-react";
-import { PAPER, STAMP, GOOD, todayISO, monthKeyOf, parsePriceInput } from "./lib.js";
+import { PAPER, STAMP, GOOD, todayISO, monthKeyOf, parsePriceInput, fmt } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
 import { callGeminiVision, parseJsonLoose } from "./gemini.js";
 
-export default function AddExpenseSheet({ viewMonth, categories, initialEntry, aiSettings, onClose, onSubmit }) {
+// 從過去的支出統計「常用項目」與「常用金額」：次數多的在前，次數一樣就最近用過的在前
+function bump(map, key, date) {
+  const s = map.get(key) || { n: 0, last: "" };
+  s.n += 1;
+  if (date > s.last) s.last = date;
+  map.set(key, s);
+}
+function rank(map, limit) {
+  return [...map.entries()]
+    .sort((a, b) => b[1].n - a[1].n || (a[1].last < b[1].last ? 1 : -1))
+    .slice(0, limit);
+}
+function buildSuggestStats(expenses) {
+  const items = new Map();      // 項目名稱 -> { n, last, cats, prices }
+  const catPrices = new Map();  // 分類 -> 金額統計
+  for (const e of expenses) {
+    const date = e.date || "";
+    const price = Number(e.price);
+    const name = (e.item || "").trim();
+    if (name) {
+      let it = items.get(name);
+      if (!it) { it = { n: 0, last: "", cats: new Map(), prices: new Map() }; items.set(name, it); }
+      it.n += 1;
+      if (date > it.last) it.last = date;
+      if (e.category) bump(it.cats, e.category, date);
+      if (price > 0 && isFinite(price)) bump(it.prices, price, date);
+    }
+    if (e.category && price > 0 && isFinite(price)) {
+      if (!catPrices.has(e.category)) catPrices.set(e.category, new Map());
+      bump(catPrices.get(e.category), price, date);
+    }
+  }
+  const itemMap = new Map();
+  for (const [name, it] of items) {
+    const topCat = rank(it.cats, 1)[0];
+    itemMap.set(name, {
+      name, n: it.n, last: it.last,
+      cat: topCat ? topCat[0] : "",
+      topPrices: rank(it.prices, 5).map(([p]) => p),
+    });
+  }
+  const list = [...itemMap.values()].sort((a, b) => b.n - a.n || (a.last < b.last ? 1 : -1));
+  const catTop = new Map();
+  for (const [cat, m] of catPrices) catTop.set(cat, rank(m, 6).map(([p]) => p));
+  return { list, itemMap, catTop };
+}
+
+const chipStyle = {
+  border: "1px solid #E0D5BC", background: "#fff", color: "#5C5343", borderRadius: 999,
+  padding: "5px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+  display: "flex", alignItems: "center", gap: 5,
+};
+
+export default function AddExpenseSheet({ viewMonth, categories, expenses, initialEntry, aiSettings, onClose, onSubmit }) {
   const isEdit = !!initialEntry;
   const [date, setDate] = useState(() => {
     if (initialEntry) return initialEntry.date;
@@ -20,6 +73,15 @@ export default function AddExpenseSheet({ viewMonth, categories, initialEntry, a
   const [scanError, setScanError] = useState("");
   const [scanNotice, setScanNotice] = useState("");
   const fileRef = useRef(null);
+  const priceRef = useRef(null);
+
+  // 常用項目／金額提示：只在「新增」時出現，點到欄位才顯示
+  const [focusField, setFocusField] = useState(null); // "item" | "price" | null
+  const hideTimer = useRef(null);
+  const showField = (f) => { clearTimeout(hideTimer.current); setFocusField(f); };
+  // 稍微延遲才收起，點提示標籤時才不會因為欄位失焦而點不到
+  const hideField = () => { hideTimer.current = setTimeout(() => setFocusField(null), 180); };
+  const stats = useMemo(() => (isEdit ? null : buildSuggestStats(expenses || [])), [expenses, isEdit]);
 
   const hasKey = !!(aiSettings?.apiKey && aiSettings.apiKey.trim());
 
@@ -33,6 +95,28 @@ export default function AddExpenseSheet({ viewMonth, categories, initialEntry, a
   const commitPrice = () => {
     if (priceParsed.ok && priceParsed.isExpr) setPrice(String(priceParsed.value));
     setCalcMode(false);
+    hideField();
+  };
+
+  const itemQuery = item.trim().toLowerCase();
+  const itemSuggestions = stats && focusField === "item"
+    ? stats.list.filter((s) => s.name !== item.trim() && (!itemQuery || s.name.toLowerCase().includes(itemQuery))).slice(0, 8)
+    : [];
+  const matchedItem = stats ? stats.itemMap.get(item.trim()) : null;
+  const priceSuggestions = stats && focusField === "price" && !calcMode
+    ? (matchedItem && matchedItem.topPrices.length ? matchedItem.topPrices : stats.catTop.get(category) || [])
+    : [];
+
+  // 點項目：填入項目、自動切到它最常用的分類，接著跳到金額欄
+  const pickItem = (s) => {
+    setItem(s.name);
+    if (s.cat && categories.some((c) => c.id === s.cat)) setCategory(s.cat);
+    if (priceRef.current) priceRef.current.focus();
+  };
+  // 點金額：填入金額並收起鍵盤
+  const pickPrice = (p) => {
+    setPrice(String(p));
+    if (priceRef.current) priceRef.current.blur();
   };
 
   const handleScan = async (file) => {
@@ -114,17 +198,40 @@ export default function AddExpenseSheet({ viewMonth, categories, initialEntry, a
         </div>
 
         <label style={fieldLabel}>項目</label>
-        <input type="text" placeholder="例如：晚餐、UBike、咖啡" value={item} onChange={(e) => setItem(e.target.value)} style={inputStyle} />
+        <input type="text" placeholder="例如：晚餐、UBike、咖啡" value={item} onChange={(e) => setItem(e.target.value)}
+          onFocus={() => showField("item")} onBlur={hideField} style={inputStyle} />
+        {itemSuggestions.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "-6px 0 14px" }}>
+            {itemSuggestions.map((s) => {
+              const cat = categories.find((c) => c.id === s.cat);
+              return (
+                <button key={s.name} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pickItem(s)} style={chipStyle}>
+                  {cat && <CatDot color={cat.color} size={6} />}{s.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         <label style={fieldLabel}>金額（可輸入 =100-10 這類算式）</label>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-          <input type="text" inputMode={calcMode ? "text" : "decimal"} placeholder="0" value={price}
-            onChange={(e) => setPrice(e.target.value)} onBlur={commitPrice}
+          <input ref={priceRef} type="text" inputMode={calcMode ? "text" : "decimal"} placeholder="0" value={price}
+            onChange={(e) => setPrice(e.target.value)} onFocus={() => showField("price")} onBlur={commitPrice}
             style={{ ...inputStyle, marginBottom: priceParsed.isExpr || !priceParsed.ok ? 4 : 14, fontFamily: "'JetBrains Mono', monospace", fontSize: 18, flex: 1 }} />
           <button type="button" onMouseDown={(e) => e.preventDefault()}
             onClick={() => { setCalcMode(true); if (!String(price).trim().startsWith("=")) setPrice("=" + (price || "")); }}
             style={{ border: `1px solid ${STAMP}`, background: `${STAMP}0F`, color: STAMP, borderRadius: 12, width: 44, height: 43, fontSize: 20, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>=</button>
         </div>
+        {priceSuggestions.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "2px 0 14px" }}>
+            {priceSuggestions.map((p) => (
+              <button key={p} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pickPrice(p)}
+                style={{ ...chipStyle, fontFamily: "'JetBrains Mono', monospace" }}>
+                ${fmt(p)}
+              </button>
+            ))}
+          </div>
+        )}
         {priceParsed.isExpr && priceParsed.ok && (
           <div style={{ fontSize: 12.5, color: GOOD, margin: "0 2px 14px", fontFamily: "'JetBrains Mono', monospace" }}>= {priceParsed.value}</div>
         )}

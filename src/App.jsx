@@ -640,7 +640,7 @@ export default function App() {
 
       {(showAdd || editingExpense) && (
         <AddExpenseSheet
-          viewMonth={viewMonth} categories={categories} initialEntry={editingExpense} aiSettings={aiSettings}
+          viewMonth={viewMonth} categories={categories} expenses={expenses} initialEntry={editingExpense} aiSettings={aiSettings}
           onClose={() => { setShowAdd(false); setEditingExpense(null); }}
           onSubmit={(patch, id) => (id ? updateExpense(id, patch) : addExpense(patch))}
         />
