@@ -21,7 +21,7 @@
   - **支出**：`ledgers/{uid}/months/{YYYY-MM}`，**每個月一份文件，月內每一筆各占一格**（`items.<支出編號>`）。新增／修改／刪除只動那一筆那一格，不會整份覆蓋，所以**離線也能記帳**（連上網路後自動送出），兩台裝置同時記也不會互相蓋掉。
   - **其他**（收入、分類、收入來源、月備註、設定…）：還是在 `ledgers/{uid}` 這一份主文件。收入維持原樣，教學 App 的收入同步沒有動。
   - **舊資料搬家**：第一次用新版登入時，若主文件裡還有舊的 `expenses` 陣列，會自動：先把整份舊資料備份成 `months/_backup_legacy_<時間>` → 搬到各月份 → 從伺服器重讀核對每一筆都在 → 才刪掉主文件裡的舊陣列。任何一步失敗都不會刪東西，畫面會顯示可重試。備份文件留在雲端，確認沒問題後可以自行刪除。
-  - 這需要 Firebase 規則開放 `ledgers/{uid}/months/{month}`（見根目錄 `firestore.rules`）。
+  - 這需要 Firebase 規則開放 `ledgers/{uid}/months/{month}`（見根目錄 `moneybook-50481.rules.txt`）。
 - **新增支出的常用提示：** 在「記一筆」點項目欄會列出常用項目，點金額欄會列出常用金額（依過去的支出統計，次數多的在前、次數一樣就最近用過的在前）；點項目會自動帶入它最常用的分類並跳到金額欄。只在「新增」時出現。
 - 「華語文教學」這個收入來源是從教學紀錄 App 自動同步進來的，這裡只能看、不能改。
 
@@ -33,7 +33,7 @@
 2. 左側選單「Build → Authentication」→「Get started」→ 啟用「Email/Password」登入方式。
 3. 左側選單「Build → Firestore Database」→「Create database」→ 選 production mode，地區選 asia-east1（或任一）。
 4. 建立好之後，點左側「Firestore Database → 規則」，貼上規則後按發布。
-   - ⚠️ **本專案根目錄的 `firestore.rules` 是 `moneybook-50481` 專案「完整」的規則**，這個專案同時給生活帳本、財務資產 All-MoneyBook、華語課表／收入、旅費帳本使用，而 Firebase 一個專案只有一份規則。所以要發布就貼**整份**，不能只貼其中一段，否則其他網站會被擋住。
+   - ⚠️ **本專案根目錄的 `moneybook-50481.rules.txt` 是 `moneybook-50481` 專案「完整」的規則**，這個專案同時給生活帳本、財務資產 All-MoneyBook、華語課表／收入、旅費帳本使用，而 Firebase 一個專案只有一份規則。所以要發布就貼**整份**，不能只貼其中一段，否則其他網站會被擋住。
    - 如果是全新的專案，只需要保留 `ledgers/{uid}` 和 `ledgers/{uid}/months/{month}` 這兩段。
 5. 左側選單「專案設定」（齒輪圖示）→ 往下捲到「我的應用程式」→ 點 網頁圖示 `</>` 新增一個網頁應用程式 → 註冊後會看到一段 `firebaseConfig`。
 6. 把那段設定值貼到 `src/firebase.js` 裡，取代原本的設定。
@@ -78,6 +78,6 @@ npm run dev
 - `src/App.jsx`：主要畫面與邏輯（也負責讀寫 Firestore）
 - `src/lib.js`：金額、日期、統計、隨手記解析等共用計算
 - `src/firebase.js`：Firebase 連線設定（目前是 `moneybook-50481`）
-- `firestore.rules`：`moneybook-50481` 專案的完整資料庫安全規則（多個網站共用，只允許登入者存取自己的資料）
+- `moneybook-50481.rules.txt`：`moneybook-50481` 專案的完整資料庫安全規則（多個網站共用，只允許登入者存取自己的資料）
 - `apps-script/living-expenses-sync.gs`：把支出（每月一份）與收入同步到 Google 試算表的 Apps Script 腳本備份（`syncLivingExpenses`），要貼到 Apps Script 才會生效；用到的指令碼屬性與「改了哪些欄位就要同步改腳本」見 `apps-script/README.md`
 - `.github/workflows/deploy.yml`：自動部署到 GitHub Pages 的流程
