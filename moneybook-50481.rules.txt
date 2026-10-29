@@ -1,5 +1,7 @@
 // ===== Firebase 專案 moneybook-50481 的 Firestore 規則（整份貼上取代）=====
-// 連接的 repo：moneybook、all-moneybook、huimoney、cadadiaunosminutos、generador-de-ejercicios、travelaccount、timetree-sync。整理日期：2026-10-29
+// 連接的 repo：moneybook、all-moneybook、huimoney、cadadiaunosminutos、generador-de-ejercicios、travelaccount、timetree-sync。最後更新：2026-10-29 15:25（以下為這次整理：規則內容沒改，只加註解）
+// 變更紀錄（只留最新 3 筆，新的放最上面；每次改規則都要寫日期＋時間）：
+//   - 2026-10-29 15:25 加最上方註解、規則檔改名（規則內容沒改）
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
