@@ -169,6 +169,30 @@ export default function App() {
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
 
+  // 跨月自動跳轉：App 放在背景過了月底，回來（或午夜）時，
+  // 如果原本就在看「當月」，就自動跳到新的當月；刻意在看舊月份則不動。
+  const lastCurrentMonth = useRef(monthKeyOf(todayISO()));
+  useEffect(() => {
+    const check = () => {
+      const nowMonth = monthKeyOf(todayISO());
+      const prevMonth = lastCurrentMonth.current;
+      if (nowMonth === prevMonth) return;
+      lastCurrentMonth.current = nowMonth;
+      setViewMonth((v) => (v === prevMonth ? nowMonth : v));
+    };
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", check);
+    window.addEventListener("pageshow", check);
+    const timer = setInterval(check, 60 * 1000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("pageshow", check);
+      clearInterval(timer);
+    };
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     setLoadError(false);
@@ -219,10 +243,9 @@ export default function App() {
       (snap) => {
         const list = flattenMonthDocs(snap.docs.map((d) => ({ id: d.id, data: d.data() })));
         setExpenses(list);
-        if (!initializedMonth.current && list.length) {
-          setViewMonth(monthKeyOf(list[list.length - 1].date));
-          initializedMonth.current = true;
-        }
+        // 一開始就顯示「今天所在的月份」（useState 已設定），不再跳到最後一筆記錄的月份，
+        // 否則新月份還沒有記錄時，畫面會停在上個月。
+        initializedMonth.current = true;
         setMonthsLoaded(true);
         setMonthsSynced(!snap.metadata.fromCache);
       },
