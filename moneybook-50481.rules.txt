@@ -1,45 +1,40 @@
 // ===== Firebase 專案 moneybook-50481 的 Firestore 規則（整份貼上取代）=====
-// 連接的 repo：moneybook、all-moneybook、huimoney、cadadiaunosminutos、generador-de-ejercicios、travelaccount、timetree-sync。最後更新：2026-10-29 15:25（以下為這次整理：規則內容沒改，只加註解）
+// 連接的 repo：moneybook、all-moneybook、huimoney、cadadiaunosminutos、generador-de-ejercicios、travelaccount、timetree-sync、diario-de-chino（學生頁與老師後台）。最後更新：2026-11-14 21:00（把線上現行的完整規則同步進來，含 portal 學生頁／後台的全部規則到第十批）
 // 變更紀錄（只留最新 3 筆，新的放最上面；每次改規則都要寫日期＋時間）：
+//   - 2026-11-14 21:00 同步線上現行完整規則：補上 portal/{tid}/...（學生頁與後台，到第十批：測驗結果 placements、老師備註 notes），以及 users/{uid}/zoomNotes、ttMeta、oralHistory、worksheetProjects（規則內容以線上為準，這次只整理檔案）
 //   - 2026-10-29 15:25 加最上方註解、規則檔改名（規則內容沒改）
+// portal/ 底下每一段的說明，另外寫在 diario-de-chino repo 的 moneybook-50481-portal-rules.txt。
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ⚠️ 這是 Firebase 專案 moneybook-50481 的「完整」規則（2026-10-19 從線上複製）。
+    // ⚠️ 這是 Firebase 專案 moneybook-50481 的「完整」規則（2026-11-14 從線上複製）。
     // 這個專案同時給多個網站用（生活帳本 moneybook、財務資產 All-MoneyBook、
-    // 華語課表／收入、旅費帳本 travelaccount），而 Firebase 整個專案只有一份規則，
+    // 華語課表／收入、旅費帳本 travelaccount、學生頁 diario-de-chino），而 Firebase 整個專案只有一份規則，
     // 所以發布時要貼「整份」，不能只貼其中一段，否則其他網站會被擋住。
 
-    // Each signed-in user can only read/write their own ledger document.
+
     match /ledgers/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // 🆕 生活帳本改成「每月一份」之後用的：ledgers/{uid}/months/{YYYY-MM}
-    // （上面的 ledgers/{uid} 只管那一份文件本身，管不到它底下的子集合，所以要另外開）
+    // 🆕 生活帳本「每月一份」用的（上面那條管不到子集合，要另外開）
     match /ledgers/{uid}/months/{month} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // Each signed-in user can only read/write their own schedule document.
     match /schedules/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // Each signed-in user can only read/write their own student records document.
     match /studentRecords/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // Each signed-in user can only read/write their own 每日上課收入 document.
     match /dailyIncome/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // Each signed-in user can only read/write their own 實際收入紀錄 document.
     match /actualRecords/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // Each signed-in user can only read/write their own 財務資產 document.
     match /financeAssets/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // Each signed-in user can only read/write their own 股票投資紀錄 document.
     match /stockAssets/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
@@ -49,11 +44,9 @@ service cloud.firestore {
     match /overviewMonthly/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // 📬 待確認的對帳單：自動程式用管理員金鑰寫入；網頁可以讀、丟掉、復原時放回
     match /stmtPending/{uid}/items/{itemId} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // 課程行事曆：每個使用者只能讀寫自己底下的課程範本、學生、擋期行程
     match /users/{uid}/courseEvents/{eventId} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
@@ -63,22 +56,33 @@ service cloud.firestore {
     match /users/{uid}/blockEvents/{blockId} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-
-    // TimeTree 課表：由 GitHub Actions 用管理員金鑰寫入，網頁只能讀
     match /users/{uid}/ttSync/{docId} {
       allow read: if request.auth != null && request.auth.uid == uid;
     }
-    // 網頁上的「請假／沒上課有付錢」標記
+    // 🆕 Zoom 上課摘要（由 Apps Script 寫入，網頁只讀）
+    match /users/{uid}/zoomNotes/{docId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+    }
     match /users/{uid}/ttMarks/{markId} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-
+    // 🆕 請假／沒上課有付錢的標記（合併成一份文件的新版）
+    match /users/{uid}/ttMeta/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // ===== 語法練習工具（generador-de-ejercicios）=====
+    // 課堂口說練習設計：歷史紀錄
+    match /users/{uid}/oralHistory/{id} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // 語法練習單產生器：我的練習單（專案清單）
+    match /users/{uid}/worksheetProjects/{id} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
     // ===== 旅費帳本（travelaccount）=====
-    // 使用者設定
     match /travelUsers/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // 家庭帳本（以邀請碼＝文件 ID 加入）
     match /travelHouseholds/{hid} {
       allow get: if request.auth != null;
       allow create: if request.auth != null
@@ -96,5 +100,197 @@ service cloud.firestore {
           && request.auth.uid in get(/databases/$(database)/documents/travelHouseholds/$(hid)).data.members;
       }
     }
+    // 學生頁：日誌複製過來的「每位學生自己那一份」
+    match /portal/{tid}/students/{sid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email));
+      allow write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 對照表：學生電子郵件 ↔ 日誌學生
+    match /portal/{tid}/roster/{sid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true && resource.data.email == request.auth.token.email));
+      allow write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 發布帳號：老師允許的帳號。只有老師本人能增減。
+    match /portal/{tid}/admins/{aid} {
+      allow read, write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 作業原稿（含標準答案）：只有老師和被允許的發布帳號可以讀寫。學生讀不到。
+    match /portal/{tid}/hwPool/{wid} {
+      allow read, write: if request.auth != null && (
+        request.auth.uid == tid ||
+        exists(/databases/$(database)/documents/portal/$(tid)/admins/$(request.auth.uid)));
+    }
+    // 發給每位學生的那一份（只有題目）：學生只讀自己的；老師全部讀寫。
+    match /portal/{tid}/students/{sid}/hw/{hid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email));
+      allow write: if request.auth != null && request.auth.uid == tid;
+      allow update: if request.auth != null
+        && request.auth.token.email_verified == true
+        && get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email
+        && resource.data.status == 'todo'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answers', 'status', 'submittedAt'])
+        && request.resource.data.status in ['todo', 'submitted'];
+    }
+    // 學生用 Word 交作業：Word 檔轉成文字存在這裡，一份作業一個檔。
+    match /portal/{tid}/students/{sid}/hwFiles/{wid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email));
+      allow write: if request.auth != null && request.auth.uid == tid;
+      allow create, update: if request.auth != null
+        && request.auth.token.email_verified == true
+        && get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email
+        && get(/databases/$(database)/documents/portal/$(tid)/students/$(sid)/hw/$(wid)).data.status == 'todo'
+        && request.resource.data.keys().hasOnly(['b64', 'name', 'size', 'at'])
+        && request.resource.data.b64 is string
+        && request.resource.data.b64.size() < 850000;
+      allow delete: if request.auth != null
+        && request.auth.token.email_verified == true
+        && get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email
+        && get(/databases/$(database)/documents/portal/$(tid)/students/$(sid)/hw/$(wid)).data.status == 'todo';
+    }
+    // 彈跳視窗的鼓勵句與提醒文字：老師在後台改。只有老師能寫；已驗證信箱的登入者可讀（都是公開性質的短句，不含任何學生資料）。
+    match /portal/{tid}/config/{cid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        request.auth.token.email_verified == true);
+      allow write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 新註冊：文件編號就是學生自己的 uid。學生只能寫、讀「自己的那一筆」，而且信箱必須是他自己已驗證的信箱；老師全部讀寫（確認或忽略）。
+    match /portal/{tid}/requests/{ruid} {
+      allow read: if request.auth != null && (request.auth.uid == tid || request.auth.uid == ruid);
+      allow create, update: if request.auth != null
+        && request.auth.uid == ruid
+        && request.auth.token.email_verified == true
+        && request.resource.data.keys().hasOnly(['email', 'uid', 'at'])
+        && request.resource.data.email == request.auth.token.email.lower()
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null && request.auth.uid == tid;
+    }
+    // 教材連結：只有老師和該位學生讀得到；網頁端一律不能寫（寫入只有 Apps Script 服務帳號）。
+    match /portal/{tid}/materials/{sid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email));
+      allow write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 單字／語法清單：老師寫；老師和「信箱已驗證、而且就是這位學生」的人可讀
+    match /portal/{tid}/lists/{sid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email));
+      allow write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 「還不熟」標記：學生只能讀寫自己那一份；欄位只能是 v、nf、updatedAt，nf 是清單、最多 500 個。老師可讀寫。
+    match /portal/{tid}/marks/{sid} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email));
+      allow create, update: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         get(/databases/$(database)/documents/portal/$(tid)/roster/$(sid)).data.email == request.auth.token.email &&
+         request.resource.data.keys().hasOnly(['v', 'nf', 'updatedAt']) &&
+         request.resource.data.nf is list && request.resource.data.nf.size() <= 500));
+      allow delete: if request.auth != null && request.auth.uid == tid;
+    }
+    // 學生名單鏡像：只有老師能讀寫（學生不需要讀它，規則內部用 exists／get 查）
+    match /portal/{tid}/members/{email} {
+      allow read, write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 公布欄
+    match /portal/{tid}/board/{id} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email))));
+      allow write: if request.auth != null && request.auth.uid == tid;
+    }
+    // 公開留言板
+    match /portal/{tid}/wall/{id} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email))));
+      allow create: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)) &&
+         request.resource.data.keys().hasOnly(['sid', 'name', 'text', 'ts']) &&
+         request.resource.data.sid == get(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)).data.sid &&
+         request.resource.data.name == get(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)).data.name &&
+         request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000 &&
+         request.resource.data.ts is number));
+      allow delete: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)) &&
+         resource.data.sid == get(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)).data.sid));
+      allow update: if false;
+    }
+    // 私訊
+    match /portal/{tid}/dm/{id} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)) &&
+         resource.data.sid == get(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)).data.sid));
+      allow create: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)) &&
+         request.resource.data.keys().hasOnly(['sid', 'from', 'text', 'ts']) &&
+         request.resource.data.sid == get(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)).data.sid &&
+         request.resource.data.from == 's' &&
+         request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000 &&
+         request.resource.data.ts is number));
+      allow update: if false;
+      allow delete: if request.auth != null && request.auth.uid == tid;
+    }
+    match /portal/{tid}/placements/{id} {
+      allow read: if request.auth != null && (
+        request.auth.uid == tid ||
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)) &&
+         resource.data.sid == get(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)).data.sid));
+      allow create: if
+        request.resource.data.keys().hasOnly(['src', 'sid', 'name', 'mode', 'ts', 'reached', 'cefr', 'tocfl', 'right', 'total', 'by', 'py']) &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 40 &&
+        request.resource.data.mode in ['quick', 'full'] &&
+        request.resource.data.reached is int && request.resource.data.reached >= 0 && request.resource.data.reached <= 6 &&
+        request.resource.data.cefr is string && request.resource.data.cefr.size() <= 6 &&
+        request.resource.data.tocfl is string && request.resource.data.tocfl.size() <= 5 &&
+        request.resource.data.right is int && request.resource.data.right >= 0 && request.resource.data.right <= 60 &&
+        request.resource.data.total is int && request.resource.data.total >= 1 && request.resource.data.total <= 60 &&
+        request.resource.data.right <= request.resource.data.total &&
+        request.resource.data.by is map && request.resource.data.by.size() <= 6 &&
+        request.resource.data.py is bool &&
+        request.resource.data.ts is number &&
+        request.resource.data.ts > request.time.toMillis() - 86400000 && request.resource.data.ts < request.time.toMillis() + 86400000 &&
+        ((request.resource.data.src == 'web' && !('sid' in request.resource.data)) ||
+         (request.resource.data.src == 'portal' && request.auth != null &&
+          request.auth.token.email_verified == true &&
+          exists(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)) &&
+          request.resource.data.sid == get(/databases/$(database)/documents/portal/$(tid)/members/$(request.auth.token.email)).data.sid));
+      allow update: if false;
+      allow delete: if request.auth != null && request.auth.uid == tid;
+    }
+    // 老師專用備註
+    match /portal/{tid}/notes/{sid} {
+      allow read, write: if request.auth != null && request.auth.uid == tid;
+    }
+
   }
 }
