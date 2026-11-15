@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Download, Upload, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PAPER, STAMP, GOOD, LEGACY_INCOME_LABELS, SYNCED_INCOME_SOURCE_ID, DEFAULT_APP_NAME, genId, todayISO } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
+import { parseChtInvoice, maskMatches, invoiceItemName, INVOICE_SUPPORTED } from "./invoiceImport.js";
 
 const PALETTE = ["#C1622D", "#B4637A", "#2F6F62", "#4A6FA5", "#A97C50", "#7B5E7B", "#5B5B5B", "#4B5A85", "#3F7D5C", "#C79A2A", "#8C8474", "#A3352A", "#6B8E23", "#B5533C"];
 
@@ -21,6 +22,7 @@ export default function SettingsModal({
   incomeSources, setIncomeSourcesPersist,
   expenses, incomes, setDataPersist,
   aiSettings, setAiSettingsPersist,
+  phoneMap, setPhoneMapPersist,
   setStatsPasswordPersist,
   initialSection,
   onClose,
@@ -43,6 +45,8 @@ export default function SettingsModal({
   const [incomeDeleteBlocked, setIncomeDeleteBlocked] = useState(null);
   const backupFileRef = useRef(null);
   const legacyFileRef = useRef(null);
+  const invoiceFileRef = useRef(null);
+  const [invoiceDrafts, setInvoiceDrafts] = useState([]);   // 匯入帳單證明：每個檔案一張確認卡
 
   const usedCategoryIds = new Set(expenses.map((e) => e.category));
   const usedIncomeSourceIds = new Set(incomes.map((i) => i.source));
@@ -133,6 +137,70 @@ export default function SettingsModal({
     const nextIncomes = [...incomes, ...newIncomes];
     setDataPersist(nextExpenses, nextIncomes);
     setImportMsg(`匯入了 ${newExpenses.length} 筆支出、${newIncomes.length} 筆收入`);
+  };
+
+
+  // ---- import: 帳單證明（中華電信電子發票 .htm，信件附件）----
+  // 讀進來先放在確認卡，按「寫進帳本」才會真的記帳。發票號碼存在那筆支出的 invoiceNo，用來擋重複匯入。
+  const defaultInvoiceCategory = () => (categories.find((c) => c.id === "居家") || categories[0] || { id: "" }).id;
+  const importInvoices = async (fileList) => {
+    const files = Array.from(fileList || []);
+    const seen = new Set(expenses.map((e) => e.invoiceNo).filter(Boolean));
+    const drafts = [];
+    for (const f of files) {
+      const parsed = parseChtInvoice(await f.arrayBuffer());
+      if (!parsed.ok) { drafts.push({ key: genId(), fileName: f.name, error: parsed.error }); continue; }
+      const dup = seen.has(parsed.invoiceNo);
+      seen.add(parsed.invoiceNo);
+      const known = (phoneMap || {})[parsed.phoneMasked] || "";
+      drafts.push({
+        key: genId(), fileName: f.name, parsed, dup,
+        date: parsed.date,
+        category: defaultInvoiceCategory(),
+        fullPhone: known,
+        item: invoiceItemName(parsed, known),
+        price: String(parsed.total),
+        note: parsed.billMonthLabel,
+      });
+    }
+    setInvoiceDrafts(drafts);
+    setImportMsg("");
+  };
+  const patchInvoiceDraft = (key, patch) => setInvoiceDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+  const changeInvoicePhone = (d, value) => {
+    const v = value.replace(/\s+/g, "");
+    const patch = { fullPhone: v };
+    if (maskMatches(d.parsed.phoneMasked, v)) patch.item = invoiceItemName(d.parsed, v);
+    patchInvoiceDraft(d.key, patch);
+  };
+  const invoiceDraftProblem = (d) => {
+    if (d.error || d.dup) return "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return "日期要寫成 2026-10-27 這樣";
+    if (!d.category) return "請選分類";
+    if (!d.item.trim()) return "請填項目";
+    if (!(Number(d.price) > 0)) return "金額要大於 0";
+    if (d.fullPhone && d.parsed.phoneMasked && !maskMatches(d.parsed.phoneMasked, d.fullPhone)) return "完整號碼和發票上遮蔽的對不上（" + d.parsed.phoneMasked + "）";
+    return "";
+  };
+  const writeInvoices = () => {
+    const ready = invoiceDrafts.filter((d) => !d.error && !d.dup);
+    if (!ready.length || ready.some((d) => invoiceDraftProblem(d))) return;
+    const added = ready.map((d) => ({
+      id: genId(), date: d.date, category: d.category, item: d.item.trim(), price: Number(d.price),
+      note: (d.note || "").trim(), invoiceNo: d.parsed.invoiceNo,
+    }));
+    setDataPersist([...expenses, ...added], incomes);
+    // 第一次輸入的完整號碼記起來，下次同一個遮蔽號碼就自動帶出
+    const nextMap = { ...(phoneMap || {}) };
+    let mapChanged = false;
+    ready.forEach((d) => {
+      if (d.parsed.phoneMasked && d.fullPhone && maskMatches(d.parsed.phoneMasked, d.fullPhone) && nextMap[d.parsed.phoneMasked] !== d.fullPhone) {
+        nextMap[d.parsed.phoneMasked] = d.fullPhone; mapChanged = true;
+      }
+    });
+    if (mapChanged) setPhoneMapPersist(nextMap);
+    setInvoiceDrafts([]);
+    setImportMsg(`從帳單證明記了 ${added.length} 筆支出`);
   };
 
   // ---- import: legacy multi-sheet-per-month excel (original spreadsheet format) ----
@@ -335,6 +403,70 @@ export default function SettingsModal({
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 12, border: "1px solid #E0D5BC", background: "#fff", color: "#2B2620", fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
               <Upload size={16} /> 匯入舊版 Excel 記帳本（歷史資料一次搬過來）
             </button>
+
+            <input ref={invoiceFileRef} type="file" accept=".htm,.html" multiple style={{ display: "none" }}
+              onChange={(e) => { if (e.target.files.length) importInvoices(e.target.files); e.target.value = ""; }} />
+            <button onClick={() => invoiceFileRef.current.click()}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 12, border: "1px solid #E0D5BC", background: "#fff", color: "#2B2620", fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
+              <Upload size={16} /> 匯入帳單證明
+            </button>
+            <div style={{ fontSize: 11.5, color: "#A79C89", margin: "-4px 2px 12px" }}>
+              目前認得：{INVOICE_SUPPORTED}
+            </div>
+
+            {invoiceDrafts.length > 0 && (
+              <div style={{ border: "1px solid #E0D5BC", borderRadius: 12, padding: 12, marginBottom: 12, background: "#FBF8F0" }}>
+                <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 10 }}>確認後才會記帳。分類和項目可以改。</div>
+                {invoiceDrafts.map((d) => {
+                  const problem = invoiceDraftProblem(d);
+                  const needPhone = d.parsed && d.parsed.phoneMasked && !(phoneMap || {})[d.parsed.phoneMasked];
+                  return (
+                    <div key={d.key} style={{ borderBottom: "1px dashed #D8CBAE", paddingBottom: 10, marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 6, wordBreak: "break-all" }}>
+                        {d.fileName}{d.parsed ? `　發票 ${d.parsed.invoiceNo}` : ""}
+                      </div>
+                      {d.error && <div style={{ fontSize: 12.5, color: STAMP }}>{d.error}</div>}
+                      {d.dup && <div style={{ fontSize: 12.5, color: STAMP }}>這張發票已經記過了（{d.parsed.invoiceNo}），不會再記一次。</div>}
+                      {d.parsed && !d.dup && (
+                        <div>
+                          {d.parsed.warnings.map((w) => <div key={w} style={{ fontSize: 12, color: STAMP, marginBottom: 6 }}>{w}</div>)}
+                          <label style={fieldLabel}>日期（發票開立日）</label>
+                          <input type="text" value={d.date} onChange={(e) => patchInvoiceDraft(d.key, { date: e.target.value })} style={inputStyle} />
+                          <label style={fieldLabel}>分類</label>
+                          <select value={d.category} onChange={(e) => patchInvoiceDraft(d.key, { category: e.target.value })} style={inputStyle}>
+                            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          {needPhone && (
+                            <div>
+                              <label style={fieldLabel}>完整號碼（發票上是 {d.parsed.phoneMasked}，只問這一次）</label>
+                              <input type="tel" inputMode="numeric" placeholder="例如 0988123456" value={d.fullPhone}
+                                onChange={(e) => changeInvoicePhone(d, e.target.value)} style={inputStyle} />
+                            </div>
+                          )}
+                          <label style={fieldLabel}>項目</label>
+                          <input type="text" value={d.item} onChange={(e) => patchInvoiceDraft(d.key, { item: e.target.value })} style={inputStyle} />
+                          <label style={fieldLabel}>金額（發票：{d.parsed.itemName}）</label>
+                          <input type="text" inputMode="numeric" value={d.price} onChange={(e) => patchInvoiceDraft(d.key, { price: e.target.value })} style={inputStyle} />
+                          <label style={fieldLabel}>備註</label>
+                          <input type="text" value={d.note} onChange={(e) => patchInvoiceDraft(d.key, { note: e.target.value })} style={{ ...inputStyle, marginBottom: 4 }} />
+                          {problem && <div style={{ fontSize: 12, color: STAMP, marginTop: 6 }}>{problem}</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setInvoiceDrafts([])}
+                    style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E0D5BC", background: "#fff", color: "#5C5343", fontWeight: 600, fontSize: 13.5, cursor: "pointer" }}>取消</button>
+                  <button onClick={writeInvoices}
+                    disabled={!invoiceDrafts.some((d) => !d.error && !d.dup) || invoiceDrafts.some((d) => invoiceDraftProblem(d))}
+                    style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: STAMP, color: "#fff", fontWeight: 700, fontSize: 13.5, cursor: "pointer",
+                      opacity: (!invoiceDrafts.some((d) => !d.error && !d.dup) || invoiceDrafts.some((d) => invoiceDraftProblem(d))) ? 0.45 : 1 }}>
+                    寫進帳本
+                  </button>
+                </div>
+              </div>
+            )}
 
             {importMsg && <div style={{ fontSize: 12, color: GOOD, marginBottom: 10 }}>{importMsg}</div>}
 
