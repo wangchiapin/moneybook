@@ -10,6 +10,7 @@ export default function LedgerTab({
   getIncomeAmount, saveIncome,
   monthlyNotes, addMonthlyNote, updateMonthlyNote, deleteMonthlyNote,
   categoryLockUnlocked, onUnlockCategoryLock,
+  pendingBills, onOpenPending,
 }) {
   const monthGroups = useMemo(() => {
     const monthExp = expenses.filter((e) => monthKeyOf(e.date) === viewMonth);
@@ -42,6 +43,19 @@ export default function LedgerTab({
           .ledger-3col .col-income { order: 3; }
         }
       `}</style>
+
+      {(pendingBills || []).length > 0 && (
+        <button onClick={onOpenPending}
+          style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, textAlign: "left", background: "#fff", border: `1px solid ${STAMP}`, borderRadius: 12, padding: "10px 12px", marginBottom: 12, cursor: "pointer" }}>
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: STAMP }}>待扣款 {pendingBills.length} 筆</span>
+            <span style={{ display: "block", fontSize: 12, color: "#8A8072", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {pendingBills.map((b) => `${b.provider} ${fmt(b.amount)} 元${b.noPayNeeded ? "（暫無需繳款）" : ""}`).join("、")}
+            </span>
+          </span>
+          <span style={{ fontSize: 12, color: STAMP, whiteSpace: "nowrap" }}>查看 ›</span>
+        </button>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
         <Tile label="支出總計" value={monthStats.total} color={INK} />

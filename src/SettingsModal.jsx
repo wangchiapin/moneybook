@@ -23,6 +23,7 @@ export default function SettingsModal({
   expenses, incomes, setDataPersist,
   aiSettings, setAiSettingsPersist,
   invoiceNames, setInvoiceNamesPersist,
+  onOpenPending,
   setStatsPasswordPersist,
   initialSection,
   onClose,
@@ -409,6 +410,14 @@ export default function SettingsModal({
             </button>
             <div style={{ fontSize: 11.5, color: "#A79C89", margin: "-4px 2px 12px" }}>
               目前認得：{INVOICE_SUPPORTED}
+            </div>
+
+            <button onClick={onOpenPending}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 12, border: "1px solid #E0D5BC", background: "#fff", color: "#2B2620", fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
+              <Upload size={16} /> 匯入 PDF 帳單（待扣款）
+            </button>
+            <div style={{ fontSize: 11.5, color: "#A79C89", margin: "-4px 2px 12px" }}>
+              沒有付款證明的帳單（例如電信帳單）先放進待扣款，信用卡扣了再記帳。
             </div>
 
             {invoiceDrafts.length > 0 && (

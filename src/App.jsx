@@ -18,6 +18,7 @@ import {
 } from "./lib.js";
 import { StampBadge } from "./components.jsx";
 import LedgerTab from "./LedgerTab.jsx";
+import PendingBillsModal from "./PendingBillsModal.jsx";
 import StatsTab from "./StatsTab.jsx";
 import ChartsTab from "./ChartsTab.jsx";
 import SearchTab from "./SearchTab.jsx";
@@ -137,6 +138,8 @@ export default function App() {
   const [appName, setAppName] = useState(DEFAULT_APP_NAME);
   const [aiSettings, setAiSettings] = useState(DEFAULT_AI_SETTINGS);
   const [invoiceNames, setInvoiceNames] = useState([]);   // 匯入帳單證明：每支電話（發票上遮蔽的號碼）記成什麼項目
+  const [pendingBills, setPendingBills] = useState([]);   // 待扣款：電信帳單（沒有付款證明，等信用卡真的扣了才記帳）
+  const [showPending, setShowPending] = useState(false);
   const [monthlyNotes, setMonthlyNotes] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [viewMonth, setViewMonth] = useState(monthKeyOf(todayISO()));
@@ -222,6 +225,7 @@ export default function App() {
         setAppName(data.appName || DEFAULT_APP_NAME);
         setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
         setInvoiceNames(Array.isArray(data.invoiceNames) ? data.invoiceNames : []);
+        setPendingBills(Array.isArray(data.pendingBills) ? data.pendingBills : []);
         setMonthlyNotes(data.monthlyNotes || []);
         setStatsPasswordHash(data.statsPasswordHash || null);
         setQuickNoteDraft(data.quickNoteDraft || "");
@@ -418,6 +422,11 @@ export default function App() {
     if (blockIfUnsynced()) return;
     setInvoiceNames(next);
     persist({ invoiceNames: next });
+  };
+  const setPendingBillsPersist = (next) => {
+    if (blockIfUnsynced()) return;
+    setPendingBills(next);
+    persist({ pendingBills: next });
   };
   const setDataPersist = (nextExpenses, nextIncomes) => {
     if (blockIfUnsynced()) return;
@@ -630,6 +639,7 @@ export default function App() {
             monthlyNotes={monthlyNotes} addMonthlyNote={addMonthlyNote}
             updateMonthlyNote={updateMonthlyNote} deleteMonthlyNote={deleteMonthlyNote}
             categoryLockUnlocked={statsUnlocked} onUnlockCategoryLock={verifyStatsPassword}
+            pendingBills={pendingBills} onOpenPending={() => setShowPending(true)}
           />
         )}
         {tab === "stats" && (
@@ -675,6 +685,14 @@ export default function App() {
           onSubmit={(patch, id) => (id ? updateExpense(id, patch) : addExpense(patch))}
         />
       )}
+      {showPending && (
+        <PendingBillsModal
+          pendingBills={pendingBills} setPendingBillsPersist={setPendingBillsPersist}
+          expenses={expenses} incomes={incomes} setDataPersist={setDataPersist}
+          categories={categories} invoiceNames={invoiceNames} setInvoiceNamesPersist={setInvoiceNamesPersist}
+          onClose={() => setShowPending(false)}
+        />
+      )}
       {showSettings && (
         <SettingsModal
           appName={appName} setAppNamePersist={setAppNamePersist}
@@ -683,6 +701,7 @@ export default function App() {
           expenses={expenses} incomes={incomes} setDataPersist={setDataPersist}
           aiSettings={aiSettings} setAiSettingsPersist={setAiSettingsPersist}
           invoiceNames={invoiceNames} setInvoiceNamesPersist={setInvoiceNamesPersist}
+          onOpenPending={() => { setShowSettings(false); setShowPending(true); }}
           setStatsPasswordPersist={setStatsPasswordPersist}
           initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
