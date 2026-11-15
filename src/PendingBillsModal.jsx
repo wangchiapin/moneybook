@@ -51,8 +51,12 @@ export default function PendingBillsModal({
         setMsg("這份 PDF 裡沒有文字（可能是用「列印成 PDF」存的圖片）。請用信件附件的原始 PDF 檔。");
         return;
       }
-      const r = parseTwmBillText(text, todayISO());
-      if (!r.ok) { setMsg(`${file.name}：${r.error}`); return; }
+      const r = parseTwmBillText(text, todayISO(), file.name);
+      if (!r.ok) {
+        // 讀不懂時把讀到的文字前面一小段（隱藏遮蔽數字）秀出來，方便回報
+        setMsg(`${file.name}：${r.error}\n\n讀到的文字（前 400 字）：\n${text.replace(/\s+/g, " ").slice(0, 400)}`);
+        return;
+      }
       if (list.some((b) => b.billNo === r.billNo)) { setMsg(`這份帳單（${r.billNo}）已經在待扣款清單裡了。`); return; }
       if (expenses.some((e) => e.invoiceNo === r.billNo)) { setMsg(`這份帳單（${r.billNo}）已經記過帳了。`); return; }
       setPendingBillsPersist(addPendingBill(list, {
@@ -141,7 +145,7 @@ export default function PendingBillsModal({
           </div>
         )}
 
-        {msg && <div style={{ fontSize: 13, color: "#3A342A", background: "#fff", border: "1px solid #ECE1C9", borderRadius: 10, padding: "8px 10px", marginBottom: 10 }}>{msg}</div>}
+        {msg && <div style={{ fontSize: 13, color: "#3A342A", background: "#fff", border: "1px solid #ECE1C9", borderRadius: 10, padding: "8px 10px", marginBottom: 10, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{msg}</div>}
 
         {list.length === 0 && !draft && (
           <div style={{ textAlign: "center", color: "#A79C89", fontSize: 13, padding: "18px 0" }}>目前沒有待扣款的帳單</div>

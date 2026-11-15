@@ -86,14 +86,17 @@ const rocYear = (y) => (y >= 1911 ? y - 1911 : y);
  * amount, noPayNeeded, warnings }，不是這種帳單回 { ok:false, error }。
  * today：測試時可以指定「今天」（YYYY-MM-DD）。
  */
-export function parseTwmBillText(text, today) {
+export function parseTwmBillText(text, today, fileName) {
   const t = String(text || "").replace(/　/g, " ");
   const flat = t.replace(/\s+/g, " ");
-  if (!/台灣大哥大|台灣大|Taiwan Mobile/i.test(flat) && !/帳單編號\s*[:：]?\s*A\d{6,}/.test(flat)) {
+  if (!/台灣大哥大|台灣大|Taiwan Mobile|twm/i.test(flat) && !/帳單編號\s*[:：]?\s*A\d{6,}/.test(flat) && !/帳單/.test(flat) && !/A\d{11,13}/.test(String(fileName || ""))) {
     return { ok: false, error: "認不出這份帳單。目前只認得：" + PDF_BILL_SUPPORTED };
   }
 
-  const billNo = (flat.match(/帳單編號\s*[:：]?\s*([A-Z]\d{8,})/) || [])[1] || "";
+  // 帳單編號：先找「帳單編號」後面，找不到就找整份文字裡長得像 A116398010268 的號碼，最後才用檔名
+  const billNo = (flat.match(/帳單編號\s*[:：]?\s*([A-Z]\d{8,})/) || [])[1]
+    || (flat.match(/\b([A-Z]\d{11,13})\b/) || [])[1]
+    || (String(fileName || "").match(/([A-Z]\d{11,13})/) || [])[1] || "";
   if (!billNo) return { ok: false, error: "找不到帳單編號，這份可能不是台灣大哥大的帳單" };
 
   const phoneMasked = (flat.match(/\b(09[0-9*]{8,10})\b/) || [])[1] || "";

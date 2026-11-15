@@ -36,3 +36,10 @@ test("擋重複、可刪除", () => {
   assert.equal(l.length, 1);
   assert.equal(removePendingBill(l, "1").length, 0);
 });
+
+test("文字裡沒有「帳單編號」四個字時，也能從檔名或文字找到號碼", () => {
+  const t = "台灣大哥大 電信帳單 09852***91 列帳期間 10/04–11/03 本期應繳 599 A116398010268";
+  assert.equal(parseTwmBillText(t, "2026-11-16").billNo, "A116398010268");
+  const t2 = "台灣大哥大 電信帳單 列帳期間 10/04–11/03 本期應繳 599";
+  assert.equal(parseTwmBillText(t2, "2026-11-16", "我的帳單A116398010268.pdf").billNo, "A116398010268");
+});
