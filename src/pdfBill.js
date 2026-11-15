@@ -125,10 +125,13 @@ export function parseTwmBillText(text, today, fileName) {
   // 先找「連續四個數字、前面算式剛好成立」的那一列（最準，不會被說明文字裡的「1,000 元」騙到），
   // 找不到再看「應繳總額$」，最後才看「本期應繳」後面緊接的數字。
   let amount = null, prevAmt = null, paidAmt = 0;
-  const nums = [...flat.matchAll(/(?<![\d,.])(\d{1,3}(?:,\d{3})+|\d+)(?![\d,]|\.\d)/g)].map((m) => toInt(m[1]));
+  // 只從「本期應繳」這個標題之後找（頁首的「頁次 1 / 1」「-1 / 1」也會湊出算式成立的數字，要避開）
+  const headAt = Math.max(flat.indexOf("本期應繳"), flat.indexOf("帳單類別"));
+  const region = headAt >= 0 ? flat.slice(headAt) : flat;
+  const nums = [...region.matchAll(/(?<![\d,.\/-])(\d{1,3}(?:,\d{3})+|\d+)(?![\d,\/]|\.\d)/g)].map((m) => toInt(m[1]));
   for (let i = 0; i + 3 < nums.length; i++) {
     const [n1, n2, n3, n4] = nums.slice(i, i + 4);
-    if (n4 > 0 && n1 - n2 + n3 === n4) { amount = n4; prevAmt = n1; paidAmt = n2; break; }
+    if (n4 >= 10 && n1 - n2 + n3 === n4) { amount = n4; prevAmt = n1; paidAmt = n2; break; }
   }
   if (amount === null) {
     const m = flat.match(/應繳總額\s*\$?\s*([\d,]+)/) || flat.match(/本期應繳\s*[:：$]?\s*(-?[\d,]+)(?!\s*[元筆])/);
