@@ -61,7 +61,7 @@ export default function PendingBillsModal({
       if (expenses.some((e) => e.invoiceNo === r.billNo)) { setMsg(`這份帳單（${r.billNo}）已經記過帳了。`); return; }
       setPendingBillsPersist(addPendingBill(list, {
         id: genId(), billNo: r.billNo, provider: "台灣大哥大", phoneMasked: r.phoneMasked,
-        amount: r.amount, billMonthLabel: r.billMonthLabel, noPayNeeded: r.noPayNeeded, addedAt: Date.now(),
+        amount: r.amount, billMonthLabel: r.billMonthLabel, noPayNeeded: r.noPayNeeded, dueDate: r.dueDate, payMethod: r.payMethod, addedAt: Date.now(),
       }));
       setMsg(r.warnings.length ? `已加入待扣款。注意：${r.warnings.join("；")}` : "已加入待扣款清單。");
     } catch (e) {
@@ -158,7 +158,7 @@ export default function PendingBillsModal({
               <div style={{ fontSize: 13.5, fontWeight: 700 }}>
                 {b.provider}　{findInvoiceName(invoiceNames, b.phoneMasked) || `電話費 ${b.phoneMasked || ""}`}
               </div>
-              <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 8 }}>{b.billMonthLabel}　應繳 {fmt(b.amount)} 元</div>
+              <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 8 }}>{b.billMonthLabel}　應繳 {fmt(b.amount)} 元{b.dueDate ? `　截止 ${b.dueDate}` : ""}{b.payMethod ? `　${b.payMethod}` : ""}</div>
               {b.noPayNeeded && (
                 <div style={{ fontSize: 12, color: STAMP, marginBottom: 8 }}>這期帳單寫「暫無需繳款，併入次期」，這個月不會扣；等下一期帳單來再看。</div>
               )}

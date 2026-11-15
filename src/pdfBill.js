@@ -121,27 +121,32 @@ export function parseTwmBillText(text, today, fileName) {
     billMonthLabel = `${year}年${endMonth}月帳單`;
   }
 
-  // 本期應繳
-  let amount = null;
-  const am = flat.match(/本期應繳(?:金額|總額)?[^0-9\-]{0,12}\$?\s*(-?[\d,]+)/) || flat.match(/應繳(?:金額|總額)[^0-9\-]{0,12}\$?\s*(-?[\d,]+)/);
-  if (am) amount = toInt(am[1]);
+  // 本期應繳：帳單上方那一列「前期應繳 − 繳款金額 + 本期新增 = 本期應繳」，例如 601 0 599 1,200。
+  // 先找「連續四個數字、前面算式剛好成立」的那一列（最準，不會被說明文字裡的「1,000 元」騙到），
+  // 找不到再看「應繳總額$」，最後才看「本期應繳」後面緊接的數字。
+  let amount = null, prevAmt = null, paidAmt = 0;
+  const nums = [...flat.matchAll(/(?<![\d,.])(\d{1,3}(?:,\d{3})+|\d+)(?![\d,]|\.\d)/g)].map((m) => toInt(m[1]));
+  for (let i = 0; i + 3 < nums.length; i++) {
+    const [n1, n2, n3, n4] = nums.slice(i, i + 4);
+    if (n4 > 0 && n1 - n2 + n3 === n4) { amount = n4; prevAmt = n1; paidAmt = n2; break; }
+  }
+  if (amount === null) {
+    const m = flat.match(/應繳總額\s*\$?\s*([\d,]+)/) || flat.match(/本期應繳\s*[:：$]?\s*(-?[\d,]+)(?!\s*[元筆])/);
+    if (m) amount = toInt(m[1]);
+  }
   if (amount === null || !Number.isFinite(amount)) return { ok: false, error: "找不到本期應繳金額" };
+
+  const dueDate = (flat.match(/(\d{2,3}\/\d{1,2}\/\d{1,2})\s*(?:自行繳款|轉帳代繳|信用卡)/) || flat.match(/繳款截止日\s*[:：]?\s*(\d{2,3}\/\d{1,2}\/\d{1,2})/) || [])[1] || "";
+  const payMethod = (flat.match(/(自行繳款|轉帳代繳|信用卡自動扣款)/) || [])[1] || "";
 
   const noPayNeeded = /暫無需繳款|無需繳款|併入次期/.test(flat);
 
   const warnings = [];
-  // 前期應繳 − 繳款 + 本期新增 = 本期應繳，對不起來就提醒
-  const prev = flat.match(/前期應繳[^0-9\-]{0,8}(-?[\d,]+)/);
-  const paid = flat.match(/(?:前期)?繳款[^0-9\-]{0,8}(-?[\d,]+)/);
-  const add = flat.match(/本期新增[^0-9\-]{0,8}(-?[\d,]+)/);
-  if (prev && paid && add) {
-    const calc = toInt(prev[1]) - Math.abs(toInt(paid[1])) + toInt(add[1]);
-    if (calc !== amount) warnings.push(`帳單上的前期、繳款、新增算出來是 ${calc} 元，和本期應繳 ${amount} 元不一樣，請自己核對`);
-  }
+  if (prevAmt !== null && prevAmt - paidAmt > 0) warnings.push(`前期還有 ${prevAmt - paidAmt} 元沒繳，這期的 ${amount} 元是前期加本期合計`);
   if (!phoneMasked) warnings.push("沒讀到電話號碼，項目名稱請自己確認");
   if (!periodEnd) warnings.push("沒讀到列帳期間，帳單月份請自己填");
 
-  return { ok: true, billNo, phoneMasked, periodEnd, billMonthLabel, amount, noPayNeeded, warnings };
+  return { ok: true, billNo, phoneMasked, periodEnd, billMonthLabel, amount, noPayNeeded, dueDate, payMethod, warnings };
 }
 
 // 待扣款清單（存在主文件 pendingBills）：加入、刪除、擋重複
