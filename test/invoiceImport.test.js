@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { parseChtInvoice, maskMatches, invoiceItemName } from "../src/invoiceImport.js";
+import { parseChtInvoice, findInvoiceName, setInvoiceName, removeInvoiceName, DEFAULT_PHONE_ITEM } from "../src/invoiceImport.js";
 
 const sample = readFileSync(new URL("./fixtures/cht-invoice-sample.htm", import.meta.url));
 
@@ -41,16 +41,26 @@ test("品項加起來和總計不一樣時，會有提醒", () => {
   assert.equal(r.warnings.length, 1);
 });
 
-test("遮蔽號碼對完整號碼", () => {
-  assert.equal(maskMatches("0988*1*9*9", "0988212949"), true);
-  assert.equal(maskMatches("0988*1*9*9", "0988212948"), false); // 最後一碼不同
-  assert.equal(maskMatches("0988*1*9*9", "098821294"), false);   // 長度不同
-  assert.equal(maskMatches("0988*1*9*9", "09882129ab"), false);
-  assert.equal(maskMatches("", "0988212949"), false);
+test("項目名稱：第一次沒有記住，記了之後同一支電話能找到", () => {
+  const r = parseChtInvoice(sample);
+  let list = [];
+  assert.equal(findInvoiceName(list, r.phoneMasked), "");
+  assert.equal(DEFAULT_PHONE_ITEM, "電話費");
+  list = setInvoiceName(list, r.phoneMasked, " 電話費-0988 ");
+  assert.deepEqual(list, [{ key: "0988*1*9*9", item: "電話費-0988" }]);
+  assert.equal(findInvoiceName(list, "0988*1*9*9"), "電話費-0988");
+  assert.equal(findInvoiceName(list, "0912*3*4*5"), ""); // 別支電話不會誤用
 });
 
-test("項目名稱：電話費＋號碼", () => {
-  const r = parseChtInvoice(sample);
-  assert.equal(invoiceItemName(r, "0988212949"), "電話費0988212949");
-  assert.equal(invoiceItemName(r, ""), "電話費0988*1*9*9");
+test("項目名稱：修改、刪除、空白不會存", () => {
+  let list = setInvoiceName([], "0988*1*9*9", "電話費-0988");
+  list = setInvoiceName(list, "0912*3*4*5", "電話費-0912");
+  list = setInvoiceName(list, "0988*1*9*9", "手機月租");          // 改名：同一個 key 只留一筆
+  assert.equal(list.length, 2);
+  assert.equal(findInvoiceName(list, "0988*1*9*9"), "手機月租");
+  assert.equal(findInvoiceName(list, "0912*3*4*5"), "電話費-0912");
+  assert.equal(setInvoiceName(list, "0988*1*9*9", "   ").length, 1); // 改成空白＝不留
+  assert.deepEqual(removeInvoiceName(list, "0988*1*9*9"), [{ key: "0912*3*4*5", item: "電話費-0912" }]);
+  assert.deepEqual(removeInvoiceName(undefined, "x"), []);
+  assert.equal(findInvoiceName(undefined, "x"), "");
 });

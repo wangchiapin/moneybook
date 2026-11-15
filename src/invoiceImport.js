@@ -120,17 +120,21 @@ export function parseChtInvoice(buf) {
   };
 }
 
-// 遮蔽號碼（0988*1*9*9）和完整號碼（0988123959）對不對得上：長度一樣，每個數字位置都一樣
-export function maskMatches(masked, full) {
-  const m = String(masked || "");
-  const f = String(full || "").trim();
-  if (!m || m.length !== f.length || !/^\d+$/.test(f)) return false;
-  for (let i = 0; i < m.length; i++) if (m[i] !== "*" && m[i] !== f[i]) return false;
-  return true;
-}
+// ---- 「這支電話的發票要記成什麼項目」：第一次選好就記住，之後同一支電話自動沿用 ----
+// 清單長這樣：[{ key: "0988*1*9*9", item: "電話費-0988" }, …]（key 是發票上遮蔽的號碼）
+export const DEFAULT_PHONE_ITEM = "電話費";
 
-// 項目名稱：電話費＋號碼（有完整號碼用完整號碼，沒有就用發票上遮蔽的寫法）
-export function invoiceItemName(parsed, fullPhone) {
-  const num = fullPhone || parsed.phoneMasked || "";
-  return "電話費" + num;
+export function findInvoiceName(list, key) {
+  if (!key || !Array.isArray(list)) return "";
+  const hit = list.find((x) => x && x.key === key);
+  return hit ? String(hit.item || "") : "";
+}
+export function setInvoiceName(list, key, item) {
+  const name = String(item || "").trim();
+  const rest = (Array.isArray(list) ? list : []).filter((x) => x && x.key !== key);
+  if (!key || !name) return rest;
+  return [...rest, { key, item: name }];
+}
+export function removeInvoiceName(list, key) {
+  return (Array.isArray(list) ? list : []).filter((x) => x && x.key !== key);
 }

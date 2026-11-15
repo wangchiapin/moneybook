@@ -3,7 +3,7 @@ import { X, Plus, Trash2, Download, Upload, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PAPER, STAMP, GOOD, LEGACY_INCOME_LABELS, SYNCED_INCOME_SOURCE_ID, DEFAULT_APP_NAME, genId, todayISO } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
-import { parseChtInvoice, maskMatches, invoiceItemName, INVOICE_SUPPORTED } from "./invoiceImport.js";
+import { parseChtInvoice, findInvoiceName, setInvoiceName, removeInvoiceName, DEFAULT_PHONE_ITEM, INVOICE_SUPPORTED } from "./invoiceImport.js";
 
 const PALETTE = ["#C1622D", "#B4637A", "#2F6F62", "#4A6FA5", "#A97C50", "#7B5E7B", "#5B5B5B", "#4B5A85", "#3F7D5C", "#C79A2A", "#8C8474", "#A3352A", "#6B8E23", "#B5533C"];
 
@@ -22,7 +22,7 @@ export default function SettingsModal({
   incomeSources, setIncomeSourcesPersist,
   expenses, incomes, setDataPersist,
   aiSettings, setAiSettingsPersist,
-  phoneMap, setPhoneMapPersist,
+  invoiceNames, setInvoiceNamesPersist,
   setStatsPasswordPersist,
   initialSection,
   onClose,
@@ -142,6 +142,7 @@ export default function SettingsModal({
 
   // ---- import: 帳單證明（中華電信電子發票 .htm，信件附件）----
   // 讀進來先放在確認卡，按「寫進帳本」才會真的記帳。發票號碼存在那筆支出的 invoiceNo，用來擋重複匯入。
+  // 項目名稱：同一支電話第一次自己填，之後自動沿用（記在 invoiceNames，可以在下面「已記住的項目名稱」修改）。
   const defaultInvoiceCategory = () => (categories.find((c) => c.id === "居家") || categories[0] || { id: "" }).id;
   const importInvoices = async (fileList) => {
     const files = Array.from(fileList || []);
@@ -152,13 +153,14 @@ export default function SettingsModal({
       if (!parsed.ok) { drafts.push({ key: genId(), fileName: f.name, error: parsed.error }); continue; }
       const dup = seen.has(parsed.invoiceNo);
       seen.add(parsed.invoiceNo);
-      const known = (phoneMap || {})[parsed.phoneMasked] || "";
+      const remembered = findInvoiceName(invoiceNames, parsed.phoneMasked);
       drafts.push({
         key: genId(), fileName: f.name, parsed, dup,
         date: parsed.date,
         category: defaultInvoiceCategory(),
-        fullPhone: known,
-        item: invoiceItemName(parsed, known),
+        remembered,                                   // 這支電話之前記住的項目名稱（沒有就是空字串）
+        item: remembered || (parsed.phoneMasked ? DEFAULT_PHONE_ITEM : parsed.itemName),
+        saveName: !remembered,                        // 第一次：預設記住；已經記住的：改了名字才問要不要更新
         price: String(parsed.total),
         note: parsed.billMonthLabel,
       });
@@ -167,19 +169,12 @@ export default function SettingsModal({
     setImportMsg("");
   };
   const patchInvoiceDraft = (key, patch) => setInvoiceDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...patch } : d)));
-  const changeInvoicePhone = (d, value) => {
-    const v = value.replace(/\s+/g, "");
-    const patch = { fullPhone: v };
-    if (maskMatches(d.parsed.phoneMasked, v)) patch.item = invoiceItemName(d.parsed, v);
-    patchInvoiceDraft(d.key, patch);
-  };
   const invoiceDraftProblem = (d) => {
     if (d.error || d.dup) return "";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return "日期要寫成 2026-10-27 這樣";
     if (!d.category) return "請選分類";
     if (!d.item.trim()) return "請填項目";
     if (!(Number(d.price) > 0)) return "金額要大於 0";
-    if (d.fullPhone && d.parsed.phoneMasked && !maskMatches(d.parsed.phoneMasked, d.fullPhone)) return "完整號碼和發票上遮蔽的對不上（" + d.parsed.phoneMasked + "）";
     return "";
   };
   const writeInvoices = () => {
@@ -190,15 +185,17 @@ export default function SettingsModal({
       note: (d.note || "").trim(), invoiceNo: d.parsed.invoiceNo,
     }));
     setDataPersist([...expenses, ...added], incomes);
-    // 第一次輸入的完整號碼記起來，下次同一個遮蔽號碼就自動帶出
-    const nextMap = { ...(phoneMap || {}) };
-    let mapChanged = false;
+    // 記住這支電話的項目名稱
+    let nextNames = invoiceNames || [];
+    let changed = false;
     ready.forEach((d) => {
-      if (d.parsed.phoneMasked && d.fullPhone && maskMatches(d.parsed.phoneMasked, d.fullPhone) && nextMap[d.parsed.phoneMasked] !== d.fullPhone) {
-        nextMap[d.parsed.phoneMasked] = d.fullPhone; mapChanged = true;
+      const key = d.parsed.phoneMasked;
+      if (key && d.saveName && findInvoiceName(nextNames, key) !== d.item.trim()) {
+        nextNames = setInvoiceName(nextNames, key, d.item);
+        changed = true;
       }
     });
-    if (mapChanged) setPhoneMapPersist(nextMap);
+    if (changed) setInvoiceNamesPersist(nextNames);
     setInvoiceDrafts([]);
     setImportMsg(`從帳單證明記了 ${added.length} 筆支出`);
   };
@@ -419,7 +416,6 @@ export default function SettingsModal({
                 <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 10 }}>確認後才會記帳。分類和項目可以改。</div>
                 {invoiceDrafts.map((d) => {
                   const problem = invoiceDraftProblem(d);
-                  const needPhone = d.parsed && d.parsed.phoneMasked && !(phoneMap || {})[d.parsed.phoneMasked];
                   return (
                     <div key={d.key} style={{ borderBottom: "1px dashed #D8CBAE", paddingBottom: 10, marginBottom: 10 }}>
                       <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 6, wordBreak: "break-all" }}>
@@ -436,15 +432,27 @@ export default function SettingsModal({
                           <select value={d.category} onChange={(e) => patchInvoiceDraft(d.key, { category: e.target.value })} style={inputStyle}>
                             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                           </select>
-                          {needPhone && (
-                            <div>
-                              <label style={fieldLabel}>完整號碼（發票上是 {d.parsed.phoneMasked}，只問這一次）</label>
-                              <input type="tel" inputMode="numeric" placeholder="例如 0988123456" value={d.fullPhone}
-                                onChange={(e) => changeInvoicePhone(d, e.target.value)} style={inputStyle} />
+                          <label style={fieldLabel}>項目</label>
+                          <input type="text" value={d.item} onChange={(e) => patchInvoiceDraft(d.key, { item: e.target.value })} style={{ ...inputStyle, marginBottom: 6 }} />
+                          {d.parsed.phoneMasked && (
+                            <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 14 }}>
+                              {d.remembered ? (
+                                d.item.trim() === d.remembered ? (
+                                  <span>電話 {d.parsed.phoneMasked}：沿用上次記住的項目名稱</span>
+                                ) : (
+                                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                                    <input type="checkbox" checked={!!d.saveName} onChange={(e) => patchInvoiceDraft(d.key, { saveName: e.target.checked })} />
+                                    之後這支電話（{d.parsed.phoneMasked}）都用這個名稱
+                                  </label>
+                                )
+                              ) : (
+                                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                                  <input type="checkbox" checked={!!d.saveName} onChange={(e) => patchInvoiceDraft(d.key, { saveName: e.target.checked })} />
+                                  這支電話（{d.parsed.phoneMasked}）第一次匯入，記住這個項目名稱，下次自動帶出
+                                </label>
+                              )}
                             </div>
                           )}
-                          <label style={fieldLabel}>項目</label>
-                          <input type="text" value={d.item} onChange={(e) => patchInvoiceDraft(d.key, { item: e.target.value })} style={inputStyle} />
                           <label style={fieldLabel}>金額（發票：{d.parsed.itemName}）</label>
                           <input type="text" inputMode="numeric" value={d.price} onChange={(e) => patchInvoiceDraft(d.key, { price: e.target.value })} style={inputStyle} />
                           <label style={fieldLabel}>備註</label>
@@ -465,6 +473,29 @@ export default function SettingsModal({
                     寫進帳本
                   </button>
                 </div>
+              </div>
+            )}
+
+            {(invoiceNames || []).length > 0 && (
+              <div style={{ border: "1px solid #E0D5BC", borderRadius: 12, padding: 12, marginBottom: 12, background: "#fff" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#5C5343", marginBottom: 4 }}>已記住的帳單項目名稱</div>
+                <div style={{ fontSize: 11.5, color: "#A79C89", marginBottom: 10 }}>匯入帳單證明時，這些電話會自動帶出右邊的項目名稱。改了只影響之後匯入的，已經記好的支出不會變。</div>
+                {invoiceNames.map((x) => (
+                  <div key={x.key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: "#8A8072", flex: "0 0 auto", fontFamily: "monospace" }}>{x.key}</div>
+                    <input type="text" defaultValue={x.item}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (!v) { e.target.value = x.item; return; }
+                        if (v !== x.item) setInvoiceNamesPersist(setInvoiceName(invoiceNames, x.key, v));
+                      }}
+                      style={{ flex: 1, minWidth: 0, border: "1px solid #E0D5BC", borderRadius: 8, padding: "6px 8px", fontSize: 13 }} />
+                    <button onClick={() => setInvoiceNamesPersist(removeInvoiceName(invoiceNames, x.key))} aria-label="刪除"
+                      style={{ background: "none", border: "none", color: "#B8AC91", cursor: "pointer", padding: 4 }}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 

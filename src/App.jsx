@@ -136,7 +136,7 @@ export default function App() {
   const [incomeSources, setIncomeSources] = useState(DEFAULT_INCOME_SOURCES);
   const [appName, setAppName] = useState(DEFAULT_APP_NAME);
   const [aiSettings, setAiSettings] = useState(DEFAULT_AI_SETTINGS);
-  const [phoneMap, setPhoneMap] = useState({});   // 電信發票上遮蔽的號碼 → 完整號碼（匯入帳單證明用）
+  const [invoiceNames, setInvoiceNames] = useState([]);   // 匯入帳單證明：每支電話（發票上遮蔽的號碼）記成什麼項目
   const [monthlyNotes, setMonthlyNotes] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [viewMonth, setViewMonth] = useState(monthKeyOf(todayISO()));
@@ -221,7 +221,7 @@ export default function App() {
         setIncomeSources(data.incomeSources && data.incomeSources.length ? data.incomeSources : DEFAULT_INCOME_SOURCES);
         setAppName(data.appName || DEFAULT_APP_NAME);
         setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
-        setPhoneMap(data.phoneMap && typeof data.phoneMap === "object" ? data.phoneMap : {});
+        setInvoiceNames(Array.isArray(data.invoiceNames) ? data.invoiceNames : []);
         setMonthlyNotes(data.monthlyNotes || []);
         setStatsPasswordHash(data.statsPasswordHash || null);
         setQuickNoteDraft(data.quickNoteDraft || "");
@@ -414,10 +414,10 @@ export default function App() {
     setAiSettings(next);
     persist({ ai: next });
   };
-  const setPhoneMapPersist = (next) => {
+  const setInvoiceNamesPersist = (next) => {
     if (blockIfUnsynced()) return;
-    setPhoneMap(next);
-    persist({ phoneMap: next });
+    setInvoiceNames(next);
+    persist({ invoiceNames: next });
   };
   const setDataPersist = (nextExpenses, nextIncomes) => {
     if (blockIfUnsynced()) return;
@@ -682,7 +682,7 @@ export default function App() {
           incomeSources={incomeSources} setIncomeSourcesPersist={setIncomeSourcesPersist}
           expenses={expenses} incomes={incomes} setDataPersist={setDataPersist}
           aiSettings={aiSettings} setAiSettingsPersist={setAiSettingsPersist}
-          phoneMap={phoneMap} setPhoneMapPersist={setPhoneMapPersist}
+          invoiceNames={invoiceNames} setInvoiceNamesPersist={setInvoiceNamesPersist}
           setStatsPasswordPersist={setStatsPasswordPersist}
           initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
