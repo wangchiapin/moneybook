@@ -4,6 +4,9 @@ import * as XLSX from "xlsx";
 import { PAPER, STAMP, GOOD, LEGACY_INCOME_LABELS, SYNCED_INCOME_SOURCE_ID, DEFAULT_APP_NAME, genId, todayISO } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
 import { parseChtInvoice, findInvoiceName, setInvoiceName, removeInvoiceName, DEFAULT_PHONE_ITEM, INVOICE_SUPPORTED } from "./invoiceImport.js";
+import { readPdfText, parseTwmBillText } from "./pdfBill.js";
+import { parseTwWaterText, WATER_SUPPORTED, DEFAULT_WATER_ITEM } from "./waterBill.js";
+import { buildReadings, mergeReadings, periodNote } from "./utilityReadings.js";
 
 const PALETTE = ["#C1622D", "#B4637A", "#2F6F62", "#4A6FA5", "#A97C50", "#7B5E7B", "#5B5B5B", "#4B5A85", "#3F7D5C", "#C79A2A", "#8C8474", "#A3352A", "#6B8E23", "#B5533C"];
 
@@ -23,6 +26,7 @@ export default function SettingsModal({
   expenses, incomes, setDataPersist,
   aiSettings, setAiSettingsPersist,
   invoiceNames, setInvoiceNamesPersist,
+  utilityReadings, setUtilityReadingsPersist,
   onOpenPending,
   setStatsPasswordPersist,
   initialSection,
@@ -111,6 +115,13 @@ export default function SettingsModal({
     );
     XLSX.utils.book_append_sheet(wb, wsExp, "支出");
     XLSX.utils.book_append_sheet(wb, wsInc, "收入");
+    const wsUtil = XLSX.utils.json_to_sheet(
+      (utilityReadings || []).map((r) => ({
+        種類: r.kind === "electric" ? "電" : "水", 表號: r.meterNo || "", 期間起: r.periodStart, 期間迄: r.periodEnd,
+        度數: r.usage, 日平均: r.dailyAvg ?? "", 單據號碼: r.docNo || "", 來源: r.source === "ref" ? "參考" : "帳單", 金額: r.amount ?? "",
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, wsUtil, "水電使用");
     XLSX.writeFile(wb, `生活帳本備份_${todayISO()}.xlsx`);
   };
 
@@ -137,7 +148,19 @@ export default function SettingsModal({
     const nextExpenses = [...expenses, ...newExpenses];
     const nextIncomes = [...incomes, ...newIncomes];
     setDataPersist(nextExpenses, nextIncomes);
-    setImportMsg(`匯入了 ${newExpenses.length} 筆支出、${newIncomes.length} 筆收入`);
+    const utilRows = wb.Sheets["水電使用"] ? XLSX.utils.sheet_to_json(wb.Sheets["水電使用"]) : [];
+    const newUtil = utilRows
+      .filter((r) => r["期間起"] && r["期間迄"] && r["度數"] !== undefined && r["度數"] !== "")
+      .map((r) => ({
+        id: genId(), kind: r["種類"] === "電" ? "electric" : "water", meterNo: r["表號"] ? String(r["表號"]).trim() : "",
+        periodStart: normalizeDate(r["期間起"]), periodEnd: normalizeDate(r["期間迄"]), usage: Number(r["度數"]), unit: "度",
+        dailyAvg: r["日平均"] === "" || r["日平均"] === undefined ? null : Number(r["日平均"]),
+        docNo: r["單據號碼"] ? String(r["單據號碼"]) : "", source: r["來源"] === "參考" ? "ref" : "bill",
+        amount: r["金額"] === "" || r["金額"] === undefined ? null : Number(r["金額"]),
+      }))
+      .filter((r) => r.periodStart && r.periodEnd && Number.isFinite(r.usage));
+    if (newUtil.length) setUtilityReadingsPersist(mergeReadings(utilityReadings, newUtil));
+    setImportMsg(`匯入了 ${newExpenses.length} 筆支出、${newIncomes.length} 筆收入${newUtil.length ? `、${newUtil.length} 筆水電使用` : ""}`);
   };
 
 
@@ -150,18 +173,48 @@ export default function SettingsModal({
     const seen = new Set(expenses.map((e) => e.invoiceNo).filter(Boolean));
     const drafts = [];
     for (const f of files) {
-      const parsed = parseChtInvoice(await f.arrayBuffer());
+      const isPdf = /\.pdf$/i.test(f.name);
+      let parsed, kind = "invoice";
+      if (!isPdf) {
+        parsed = parseChtInvoice(await f.arrayBuffer());
+        if (parsed.ok) parsed = { ...parsed, subject: `電話 ${parsed.phoneMasked}` };
+      } else {
+        // PDF：先讀出文字，再看是哪一種帳單
+        let text = "";
+        try { text = await readPdfText(await f.arrayBuffer(), ""); } catch (e) {
+          drafts.push({ key: genId(), fileName: f.name, error: e.needPassword ? "這份 PDF 有密碼。有密碼的電信帳單請用下面的「匯入 PDF 帳單（待扣款）」。" : "讀不了這份 PDF：" + (e.message || e) });
+          continue;
+        }
+        if (text.replace(/\s/g, "").length < 20) {
+          drafts.push({ key: genId(), fileName: f.name, error: "這份 PDF 裡沒有文字（可能是「列印成 PDF」存的圖片）。請用信件或網站下載的原始 PDF。" });
+          continue;
+        }
+        const w = parseTwWaterText(text);
+        if (w.ok) {
+          kind = "water";
+          parsed = {
+            ...w, invoiceNo: w.docNo, total: w.amount, itemName: `水費 ${w.waterSub ?? "?"}＋代徵 ${w.levySub ?? "?"}`,
+            phoneMasked: `水表${w.meterNo}`, subject: `水表 ${w.meterNo}`,
+            billMonthLabel: periodNote(w.periodStart, w.periodEnd, w.usage, "water"),
+          };
+        } else if (parseTwmBillText(text, todayISO(), f.name).ok) {
+          drafts.push({ key: genId(), fileName: f.name, error: "這是台灣大哥大電信帳單，沒有付款證明。請用下面的「匯入 PDF 帳單（待扣款）」。" });
+          continue;
+        } else {
+          parsed = { ok: false, error: w.error && !/認不出/.test(w.error) ? w.error : "認不出這份 PDF。目前 PDF 只認得：" + WATER_SUPPORTED };
+        }
+      }
       if (!parsed.ok) { drafts.push({ key: genId(), fileName: f.name, error: parsed.error }); continue; }
       const dup = seen.has(parsed.invoiceNo);
       seen.add(parsed.invoiceNo);
       const remembered = findInvoiceName(invoiceNames, parsed.phoneMasked);
       drafts.push({
-        key: genId(), fileName: f.name, parsed, dup,
-        date: parsed.date,
+        key: genId(), fileName: f.name, parsed, kind, dup,
+        date: kind === "water" ? parsed.date : parsed.date,
         category: defaultInvoiceCategory(),
-        remembered,                                   // 這支電話之前記住的項目名稱（沒有就是空字串）
-        item: remembered || (parsed.phoneMasked ? DEFAULT_PHONE_ITEM : parsed.itemName),
-        saveName: !remembered,                        // 第一次：預設記住；已經記住的：改了名字才問要不要更新
+        remembered,                                   // 這支電話（或水表）之前記住的項目名稱（沒有就是空字串）
+        item: remembered || (kind === "water" ? DEFAULT_WATER_ITEM : (parsed.phoneMasked ? DEFAULT_PHONE_ITEM : parsed.itemName)),
+        saveName: !remembered && kind !== "water",    // 水費預設就叫「水費」，不用特別記住
         price: String(parsed.total),
         note: parsed.billMonthLabel,
       });
@@ -186,6 +239,17 @@ export default function SettingsModal({
       note: (d.note || "").trim(), invoiceNo: d.parsed.invoiceNo,
     }));
     setDataPersist([...expenses, ...added], incomes);
+    // 水費：同時記下使用度數（本期、上期、去年同期）
+    let nextReadings = utilityReadings || [];
+    let readingCount = 0;
+    ready.forEach((d, i) => {
+      if (d.kind !== "water") return;
+      const recs = buildReadings({ ...d.parsed, amount: Number(d.price) }, genId);
+      recs[0].expenseId = added[i].id;
+      nextReadings = mergeReadings(nextReadings, recs);
+      readingCount += recs.length;
+    });
+    if (readingCount) setUtilityReadingsPersist(nextReadings);
     // 記住這支電話的項目名稱
     let nextNames = invoiceNames || [];
     let changed = false;
@@ -198,7 +262,7 @@ export default function SettingsModal({
     });
     if (changed) setInvoiceNamesPersist(nextNames);
     setInvoiceDrafts([]);
-    setImportMsg(`從帳單證明記了 ${added.length} 筆支出`);
+    setImportMsg(`從帳單證明記了 ${added.length} 筆支出${readingCount ? `，並記下 ${readingCount} 筆水電使用` : ""}`);
   };
 
   // ---- import: legacy multi-sheet-per-month excel (original spreadsheet format) ----
@@ -402,14 +466,14 @@ export default function SettingsModal({
               <Upload size={16} /> 匯入舊版 Excel 記帳本（歷史資料一次搬過來）
             </button>
 
-            <input ref={invoiceFileRef} type="file" accept=".htm,.html" multiple style={{ display: "none" }}
+            <input ref={invoiceFileRef} type="file" accept=".htm,.html,.pdf" multiple style={{ display: "none" }}
               onChange={(e) => { if (e.target.files.length) importInvoices(e.target.files); e.target.value = ""; }} />
             <button onClick={() => invoiceFileRef.current.click()}
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 12, border: "1px solid #E0D5BC", background: "#fff", color: "#2B2620", fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
               <Upload size={16} /> 匯入帳單證明
             </button>
             <div style={{ fontSize: 11.5, color: "#A79C89", margin: "-4px 2px 12px" }}>
-              目前認得：{INVOICE_SUPPORTED}
+              目前認得：{INVOICE_SUPPORTED}；{WATER_SUPPORTED}
             </div>
 
             <button onClick={onOpenPending}
@@ -428,14 +492,14 @@ export default function SettingsModal({
                   return (
                     <div key={d.key} style={{ borderBottom: "1px dashed #D8CBAE", paddingBottom: 10, marginBottom: 10 }}>
                       <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 6, wordBreak: "break-all" }}>
-                        {d.fileName}{d.parsed ? `　發票 ${d.parsed.invoiceNo}` : ""}
+                        {d.fileName}{d.parsed ? `　${d.kind === "water" ? "單據" : "發票"} ${d.parsed.invoiceNo}` : ""}
                       </div>
                       {d.error && <div style={{ fontSize: 12.5, color: STAMP }}>{d.error}</div>}
-                      {d.dup && <div style={{ fontSize: 12.5, color: STAMP }}>這張發票已經記過了（{d.parsed.invoiceNo}），不會再記一次。</div>}
+                      {d.dup && <div style={{ fontSize: 12.5, color: STAMP }}>這張{d.kind === "water" ? "收據" : "發票"}已經記過了（{d.parsed.invoiceNo}），不會再記一次。</div>}
                       {d.parsed && !d.dup && (
                         <div>
                           {d.parsed.warnings.map((w) => <div key={w} style={{ fontSize: 12, color: STAMP, marginBottom: 6 }}>{w}</div>)}
-                          <label style={fieldLabel}>日期（發票開立日）</label>
+                          <label style={fieldLabel}>{d.kind === "water" ? "日期（水費扣繳日）" : "日期（發票開立日）"}</label>
                           <input type="text" value={d.date} onChange={(e) => patchInvoiceDraft(d.key, { date: e.target.value })} style={inputStyle} />
                           <label style={fieldLabel}>分類</label>
                           <select value={d.category} onChange={(e) => patchInvoiceDraft(d.key, { category: e.target.value })} style={inputStyle}>
@@ -447,22 +511,22 @@ export default function SettingsModal({
                             <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 14 }}>
                               {d.remembered ? (
                                 d.item.trim() === d.remembered ? (
-                                  <span>電話 {d.parsed.phoneMasked}：沿用上次記住的項目名稱</span>
+                                  <span>{d.parsed.subject}：沿用上次記住的項目名稱</span>
                                 ) : (
                                   <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                                     <input type="checkbox" checked={!!d.saveName} onChange={(e) => patchInvoiceDraft(d.key, { saveName: e.target.checked })} />
-                                    之後這支電話（{d.parsed.phoneMasked}）都用這個名稱
+                                    之後這個（{d.parsed.subject}）都用這個名稱
                                   </label>
                                 )
                               ) : (
                                 <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                                   <input type="checkbox" checked={!!d.saveName} onChange={(e) => patchInvoiceDraft(d.key, { saveName: e.target.checked })} />
-                                  這支電話（{d.parsed.phoneMasked}）第一次匯入，記住這個項目名稱，下次自動帶出
+                                  {d.parsed.subject} 第一次匯入，記住這個項目名稱，下次自動帶出
                                 </label>
                               )}
                             </div>
                           )}
-                          <label style={fieldLabel}>金額（發票：{d.parsed.itemName}）</label>
+                          <label style={fieldLabel}>金額（{d.kind === "water" ? "代繳總金額" : "發票"}：{d.parsed.itemName}）</label>
                           <input type="text" inputMode="numeric" value={d.price} onChange={(e) => patchInvoiceDraft(d.key, { price: e.target.value })} style={inputStyle} />
                           <label style={fieldLabel}>備註</label>
                           <input type="text" value={d.note} onChange={(e) => patchInvoiceDraft(d.key, { note: e.target.value })} style={{ ...inputStyle, marginBottom: 4 }} />
@@ -488,7 +552,7 @@ export default function SettingsModal({
             {(invoiceNames || []).length > 0 && (
               <div style={{ border: "1px solid #E0D5BC", borderRadius: 12, padding: 12, marginBottom: 12, background: "#fff" }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: "#5C5343", marginBottom: 4 }}>已記住的帳單項目名稱</div>
-                <div style={{ fontSize: 11.5, color: "#A79C89", marginBottom: 10 }}>匯入帳單證明時，這些電話會自動帶出右邊的項目名稱。改了只影響之後匯入的，已經記好的支出不會變。</div>
+                <div style={{ fontSize: 11.5, color: "#A79C89", marginBottom: 10 }}>匯入帳單證明時，這些電話或水表會自動帶出右邊的項目名稱。改了只影響之後匯入的，已經記好的支出不會變。</div>
                 {invoiceNames.map((x) => (
                   <div key={x.key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <div style={{ fontSize: 12, color: "#8A8072", flex: "0 0 auto", fontFamily: "monospace" }}>{x.key}</div>

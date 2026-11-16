@@ -59,21 +59,26 @@ export async function readPdfText(arrayBuffer, password) {
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const tc = await page.getTextContent();
-    const rows = [];
-    tc.items.forEach((it) => {
-      if (!it.str || !it.str.trim()) return;
-      const y = it.transform[5], h = it.height || 8;
-      let row = rows.find((r) => Math.abs(r.y - y) < Math.max(2, h * 0.35));
-      if (!row) { row = { y, items: [] }; rows.push(row); }
-      row.items.push({ x: it.transform[4], s: it.str });
-    });
-    rows.sort((a, b) => b.y - a.y);
-    rows.forEach((r) => {
-      r.items.sort((a, b) => a.x - b.x);
-      lines.push(r.items.map((i) => i.s).join(" "));
-    });
+    lines.push(...textItemsToLines(tc.items));
   }
   return lines.join("\n");
+}
+
+// PDF.js 讀出來的文字塊 → 一行一行（同一高度的合成一行、由左到右）。獨立出來方便用真實 PDF 測試。
+export function textItemsToLines(items) {
+  const rows = [];
+  items.forEach((it) => {
+    if (!it.str || !it.str.trim()) return;
+    const y = it.transform[5], h = it.height || 8;
+    let row = rows.find((r) => Math.abs(r.y - y) < Math.max(2, h * 0.35));
+    if (!row) { row = { y, items: [] }; rows.push(row); }
+    row.items.push({ x: it.transform[4], s: it.str });
+  });
+  rows.sort((a, b) => b.y - a.y);
+  return rows.map((r) => {
+    r.items.sort((a, b) => a.x - b.x);
+    return r.items.map((i) => i.s).join(" ");
+  });
 }
 
 const toInt = (s) => Number(String(s).replace(/[,，\s]/g, ""));

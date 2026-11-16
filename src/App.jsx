@@ -138,6 +138,7 @@ export default function App() {
   const [appName, setAppName] = useState(DEFAULT_APP_NAME);
   const [aiSettings, setAiSettings] = useState(DEFAULT_AI_SETTINGS);
   const [invoiceNames, setInvoiceNames] = useState([]);   // 匯入帳單證明：每支電話（發票上遮蔽的號碼）記成什麼項目
+  const [utilityReadings, setUtilityReadings] = useState([]);   // 水電使用紀錄（每個表、每一期的度數）
   const [pendingBills, setPendingBills] = useState([]);   // 待扣款：電信帳單（沒有付款證明，等信用卡真的扣了才記帳）
   const [showPending, setShowPending] = useState(false);
   const [monthlyNotes, setMonthlyNotes] = useState([]);
@@ -225,6 +226,7 @@ export default function App() {
         setAppName(data.appName || DEFAULT_APP_NAME);
         setAiSettings(data.ai ? { ...DEFAULT_AI_SETTINGS, ...data.ai } : DEFAULT_AI_SETTINGS);
         setInvoiceNames(Array.isArray(data.invoiceNames) ? data.invoiceNames : []);
+        setUtilityReadings(Array.isArray(data.utilityReadings) ? data.utilityReadings : []);
         setPendingBills(Array.isArray(data.pendingBills) ? data.pendingBills : []);
         setMonthlyNotes(data.monthlyNotes || []);
         setStatsPasswordHash(data.statsPasswordHash || null);
@@ -422,6 +424,11 @@ export default function App() {
     if (blockIfUnsynced()) return;
     setInvoiceNames(next);
     persist({ invoiceNames: next });
+  };
+  const setUtilityReadingsPersist = (next) => {
+    if (blockIfUnsynced()) return;
+    setUtilityReadings(next);
+    persist({ utilityReadings: next });
   };
   const setPendingBillsPersist = (next) => {
     if (blockIfUnsynced()) return;
@@ -646,7 +653,7 @@ export default function App() {
           <StatsTab expenses={expenses} incomes={incomes} categories={categories} incomeSources={incomeSources} viewMonth={viewMonth} setViewMonth={setViewMonth} setTab={switchTab} monthlyNotes={monthlyNotes} unlocked={statsUnlocked} onUnlock={verifyStatsPassword} />
         )}
         {tab === "charts" && (
-          <ChartsTab expenses={expenses} incomes={incomes} categories={categories} incomeSources={incomeSources} viewMonth={viewMonth} />
+          <ChartsTab expenses={expenses} incomes={incomes} categories={categories} incomeSources={incomeSources} viewMonth={viewMonth} utilityReadings={utilityReadings} setUtilityReadingsPersist={setUtilityReadingsPersist} />
         )}
         {tab === "search" && (
           <SearchTab expenses={expenses} categories={categories} catMap={catMap} />
@@ -701,6 +708,7 @@ export default function App() {
           expenses={expenses} incomes={incomes} setDataPersist={setDataPersist}
           aiSettings={aiSettings} setAiSettingsPersist={setAiSettingsPersist}
           invoiceNames={invoiceNames} setInvoiceNamesPersist={setInvoiceNamesPersist}
+          utilityReadings={utilityReadings} setUtilityReadingsPersist={setUtilityReadingsPersist}
           onOpenPending={() => { setShowSettings(false); setShowPending(true); }}
           setStatsPasswordPersist={setStatsPasswordPersist}
           initialSection={settingsSection}

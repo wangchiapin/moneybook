@@ -3,9 +3,10 @@ import {
   ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts";
+import UtilityUsageCard from "./UtilityUsageCard.jsx";
 import { STAMP, GOOD, PAPER_DEEP, twYear, fmt, computeMonthStats, monthKeyOf } from "./lib.js";
 
-export default function ChartsTab({ expenses, incomes, categories, incomeSources, viewMonth }) {
+export default function ChartsTab({ expenses, incomes, categories, incomeSources, viewMonth, utilityReadings, setUtilityReadingsPersist }) {
   const [barMonth, setBarMonth] = useState(viewMonth);
 
   const availableMonths = useMemo(() => {
@@ -119,6 +120,7 @@ export default function ChartsTab({ expenses, incomes, categories, incomeSources
           </div>
         )}
       </div>
+      <UtilityUsageCard utilityReadings={utilityReadings} setUtilityReadingsPersist={setUtilityReadingsPersist} />
     </div>
   );
 }

@@ -4,6 +4,8 @@ const LIVING_SHEET_ID = '1-P07_oyR1q9p4x3PifNtRYzHIjOVKxRtlssJfy1rfTc';
 // ===== 小工具：從 Firestore 欄位取值 =====
 function fsStr(f) { return f && f.stringValue !== undefined ? f.stringValue : ''; }
 function fsNum(f) { return f ? Number(f.integerValue || f.doubleValue || 0) : 0; }
+// 沒有值（null 或沒填）就回空字串，用在「日平均」「金額」這種可以空的欄位
+function fsNumOrBlank(f) { return f && (f.integerValue !== undefined || f.doubleValue !== undefined) ? Number(f.integerValue || f.doubleValue || 0) : ''; }
 
 // ===== 讀「每月一份」的支出：ledgers/{uid}/months/{YYYY-MM} =====
 function readMonthExpenses(base, token) {
@@ -77,7 +79,34 @@ function syncLivingExpenses() {
     incomeSheet.getRange(2, 1, incomeRows.length, 3).setValues(incomeRows);
   }
 
-  Logger.log('同步完成：支出 ' + expenseRows.length + ' 筆，收入 ' + incomeRows.length + ' 筆');
+  // ---- 水電使用（放在主文件的 utilityReadings 陣列）----
+  const utilRaw = (doc.fields && doc.fields.utilityReadings && doc.fields.utilityReadings.arrayValue && doc.fields.utilityReadings.arrayValue.values) || [];
+  const utilRows = utilRaw.map(item => {
+    const f = item.mapValue.fields;
+    return [
+      fsStr(f.kind) === 'electric' ? '電' : '水',
+      fsStr(f.meterNo),
+      fsStr(f.periodStart),
+      fsStr(f.periodEnd),
+      fsNum(f.usage),
+      fsNumOrBlank(f.dailyAvg),
+      fsStr(f.docNo),
+      fsStr(f.source) === 'ref' ? '參考' : '帳單',
+      fsNumOrBlank(f.amount)
+    ];
+  });
+  utilRows.sort((a, b) => (a[0] + a[2] < b[0] + b[2] ? -1 : a[0] + a[2] > b[0] + b[2] ? 1 : 0));   // 先水後電、再依期間排序
+  let utilSheet = ss.getSheetByName('水電使用');
+  if (!utilSheet && utilRows.length > 0) utilSheet = ss.insertSheet('水電使用');   // 第一次有資料時自動新增分頁
+  if (utilSheet) {
+    utilSheet.clearContents();
+    utilSheet.appendRow(['種類', '表號', '期間起', '期間迄', '度數', '日平均', '單據號碼', '來源', '金額']);
+    if (utilRows.length > 0) {
+      utilSheet.getRange(2, 1, utilRows.length, 9).setValues(utilRows);
+    }
+  }
+
+  Logger.log('同步完成：支出 ' + expenseRows.length + ' 筆，收入 ' + incomeRows.length + ' 筆，水電使用 ' + utilRows.length + ' 筆');
 }
 
 // ===== 取得存取權杖（沒有改）=====
