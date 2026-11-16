@@ -2,14 +2,14 @@ import React, { useMemo, useState } from "react";
 import { ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { Trash2 } from "lucide-react";
 import { STAMP } from "./lib.js";
-import { KIND_LABEL, sortedReadings, removeReading, shortLabel } from "./utilityReadings.js";
+import { KIND_LABEL, groupReadings, removeReading, shortLabel } from "./utilityReadings.js";
 
 const COLORS = { water: "#4A6FA5", electric: "#C79A2A" };
 
 // 圖表頁最下面的「水電使用」：每種（水、電）一張圖、平均、明細
 export default function UtilityUsageCard({ utilityReadings, setUtilityReadingsPersist }) {
-  const kinds = ["water", "electric"].filter((k) => sortedReadings(utilityReadings, k).length > 0);
-  if (!kinds.length) {
+  const groups = groupReadings(utilityReadings);
+  if (!groups.length) {
     return (
       <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", letterSpacing: 1, marginBottom: 10 }}>水電使用</div>
@@ -21,15 +21,16 @@ export default function UtilityUsageCard({ utilityReadings, setUtilityReadingsPe
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {kinds.map((k) => (
-        <KindBlock key={k} kind={k} list={sortedReadings(utilityReadings, k)}
+      {groups.map((g) => (
+        <KindBlock key={g.key} kind={g.kind} list={g.list}
+          title={g.label || (groups.filter((x) => x.kind === g.kind).length > 1 && g.meterNo ? `表號 ${g.meterNo}` : "")}
           onDelete={(id) => setUtilityReadingsPersist(removeReading(utilityReadings, id))} />
       ))}
     </div>
   );
 }
 
-function KindBlock({ kind, list, onDelete }) {
+function KindBlock({ kind, list, title, onDelete }) {
   const [confirmId, setConfirmId] = useState(null);
   const [showList, setShowList] = useState(false);
   const color = COLORS[kind];
@@ -43,7 +44,7 @@ function KindBlock({ kind, list, onDelete }) {
   return (
     <div style={{ background: "#fff", borderRadius: 16, padding: 14, border: "1px solid #ECE1C9" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", letterSpacing: 1 }}>{KIND_LABEL[kind]}使用度數（每期）</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#8A8072", letterSpacing: 1 }}>{KIND_LABEL[kind]}使用度數（每期）{title ? `・${title}` : ""}</div>
         <div style={{ fontSize: 12, color: "#5C5343" }}>平均每期 <b>{avg}</b> 度</div>
       </div>
       <div style={{ fontSize: 11.5, color: "#A79C89", marginBottom: 8 }}>

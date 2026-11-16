@@ -34,7 +34,7 @@ export function periodNote(periodStart, periodEnd, usage, kind) {
 
 // 一份帳單 → 三筆紀錄（本期、上期、去年同期）。parsed 要有 kind, meterNo, periodStart, periodEnd, usage, dailyAvg, usagePrev, dailyAvgPrev, usageLastYear, dailyAvgLastYear, docNo, amount
 export function buildReadings(parsed, genId) {
-  const base = { kind: parsed.kind, meterNo: parsed.meterNo || "", unit: "度" };
+  const base = { kind: parsed.kind, meterNo: parsed.meterNo || "", label: parsed.label || "", unit: "度" };
   const out = [{
     ...base, id: genId(), periodStart: parsed.periodStart, periodEnd: parsed.periodEnd,
     usage: parsed.usage, dailyAvg: parsed.dailyAvg ?? null, docNo: parsed.docNo || "", source: "bill", amount: parsed.amount ?? null,
@@ -67,6 +67,20 @@ export function mergeReadings(list, incoming) {
 }
 export function removeReading(list, id) {
   return (Array.isArray(list) ? list : []).filter((r) => r && r.id !== id);
+}
+// 依「種類＋表號」分組（一樓、二樓是不同的電號，要分開畫）；水在前、電在後
+export function groupReadings(list) {
+  const map = new Map();
+  (Array.isArray(list) ? list : []).filter(Boolean).forEach((r) => {
+    const key = `${r.kind}|${r.meterNo || ""}`;
+    if (!map.has(key)) map.set(key, { key, kind: r.kind, meterNo: r.meterNo || "", label: "", list: [] });
+    const g = map.get(key);
+    g.list.push(r);
+    if (r.label && !g.label) g.label = r.label;
+  });
+  const groups = [...map.values()];
+  groups.forEach((g) => g.list.sort((a, b) => (a.periodStart < b.periodStart ? -1 : a.periodStart > b.periodStart ? 1 : 0)));
+  return groups.sort((a, b) => (a.kind === b.kind ? (a.label || a.meterNo).localeCompare(b.label || b.meterNo, "zh-Hant") : a.kind === "water" ? -1 : 1));
 }
 export function sortedReadings(list, kind) {
   return (Array.isArray(list) ? list : []).filter((r) => r && r.kind === kind)

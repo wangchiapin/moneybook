@@ -4,7 +4,8 @@ import * as XLSX from "xlsx";
 import { PAPER, STAMP, GOOD, LEGACY_INCOME_LABELS, SYNCED_INCOME_SOURCE_ID, DEFAULT_APP_NAME, genId, todayISO } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
 import { parseChtInvoice, findInvoiceName, setInvoiceName, removeInvoiceName, DEFAULT_PHONE_ITEM, INVOICE_SUPPORTED } from "./invoiceImport.js";
-import { readPdfText, parseTwmBillText } from "./pdfBill.js";
+import { readPdfText, parseTwmBillText, getSavedPdfPasswords, rememberPdfPassword } from "./pdfBill.js";
+import { parseTaipowerText, electricNote, ELECTRIC_SUPPORTED, DEFAULT_ELECTRIC_ITEM } from "./taipowerBill.js";
 import { parseTwWaterText, WATER_SUPPORTED, DEFAULT_WATER_ITEM } from "./waterBill.js";
 import { buildReadings, mergeReadings, periodNote } from "./utilityReadings.js";
 
@@ -51,6 +52,9 @@ export default function SettingsModal({
   const backupFileRef = useRef(null);
   const legacyFileRef = useRef(null);
   const invoiceFileRef = useRef(null);
+  const [pwNeeded, setPwNeeded] = useState([]);       // 匯入帳單證明時，需要密碼的 PDF：[{ key, file, wrong }]
+  const [pwText, setPwText] = useState("");
+  const [pwRemember, setPwRemember] = useState(true);
   const [invoiceDrafts, setInvoiceDrafts] = useState([]);   // 匯入帳單證明：每個檔案一張確認卡
 
   const usedCategoryIds = new Set(expenses.map((e) => e.category));
@@ -117,7 +121,7 @@ export default function SettingsModal({
     XLSX.utils.book_append_sheet(wb, wsInc, "收入");
     const wsUtil = XLSX.utils.json_to_sheet(
       (utilityReadings || []).map((r) => ({
-        種類: r.kind === "electric" ? "電" : "水", 表號: r.meterNo || "", 期間起: r.periodStart, 期間迄: r.periodEnd,
+        種類: r.kind === "electric" ? "電" : "水", 表號: r.meterNo || "", 名稱: r.label || "", 期間起: r.periodStart, 期間迄: r.periodEnd,
         度數: r.usage, 日平均: r.dailyAvg ?? "", 單據號碼: r.docNo || "", 來源: r.source === "ref" ? "參考" : "帳單", 金額: r.amount ?? "",
       }))
     );
@@ -152,7 +156,7 @@ export default function SettingsModal({
     const newUtil = utilRows
       .filter((r) => r["期間起"] && r["期間迄"] && r["度數"] !== undefined && r["度數"] !== "")
       .map((r) => ({
-        id: genId(), kind: r["種類"] === "電" ? "electric" : "water", meterNo: r["表號"] ? String(r["表號"]).trim() : "",
+        id: genId(), kind: r["種類"] === "電" ? "electric" : "water", meterNo: r["表號"] ? String(r["表號"]).trim() : "", label: r["名稱"] ? String(r["名稱"]).trim() : "",
         periodStart: normalizeDate(r["期間起"]), periodEnd: normalizeDate(r["期間迄"]), usage: Number(r["度數"]), unit: "度",
         dailyAvg: r["日平均"] === "" || r["日平均"] === undefined ? null : Number(r["日平均"]),
         docNo: r["單據號碼"] ? String(r["單據號碼"]) : "", source: r["來源"] === "參考" ? "ref" : "bill",
@@ -168,59 +172,102 @@ export default function SettingsModal({
   // 讀進來先放在確認卡，按「寫進帳本」才會真的記帳。發票號碼存在那筆支出的 invoiceNo，用來擋重複匯入。
   // 項目名稱：同一支電話第一次自己填，之後自動沿用（記在 invoiceNames，可以在下面「已記住的項目名稱」修改）。
   const defaultInvoiceCategory = () => (categories.find((c) => c.id === "居家") || categories[0] || { id: "" }).id;
+  // 讀一個檔案，回傳 { drafts, needPw, wrong }。typedPw：使用者剛輸入的 PDF 密碼
+  const draftsForFile = async (f, seen, typedPw) => {
+    const err = (error) => ({ drafts: [{ key: genId(), fileName: f.name, error }] });
+    const finish = (parsedList) => {
+      const out = [];
+      parsedList.forEach((x) => {
+        const parsed = x.parsed;
+        const dup = seen.has(parsed.invoiceNo);
+        seen.add(parsed.invoiceNo);
+        const remembered = findInvoiceName(invoiceNames, parsed.phoneMasked);
+        out.push({
+          key: genId(), fileName: f.name, parsed, kind: x.kind, dup, date: parsed.date,
+          category: defaultInvoiceCategory(),
+          remembered,                                   // 這支電話／水表／電號之前記住的項目名稱（沒有就是空字串）
+          item: remembered || x.defaultItem,
+          saveName: !remembered && x.kind !== "water",  // 水費預設就叫「水費」，不用特別記住
+          price: String(parsed.total),
+          note: parsed.billMonthLabel,
+        });
+      });
+      return { drafts: out };
+    };
+    if (!/\.pdf$/i.test(f.name)) {
+      let parsed = parseChtInvoice(await f.arrayBuffer());
+      if (!parsed.ok) return err(parsed.error);
+      parsed = { ...parsed, subject: `電話 ${parsed.phoneMasked}` };
+      return finish([{ parsed, kind: "invoice", defaultItem: parsed.phoneMasked ? DEFAULT_PHONE_ITEM : parsed.itemName }]);
+    }
+    // PDF：先讀出文字（沒有密碼就空白試、再試這台裝置記住的密碼），再看是哪一種帳單
+    const buf = await f.arrayBuffer();
+    const tries = typedPw ? [typedPw] : ["", ...getSavedPdfPasswords()];
+    let text = null, lastErr = null, usedPw = "";
+    for (const pw of tries) {
+      try { text = await readPdfText(buf, pw); usedPw = pw; break; } catch (e) {
+        lastErr = e;
+        if (!e.needPassword) return err("讀不了這份 PDF：" + (e.message || e));
+      }
+    }
+    if (text === null) return { drafts: [], needPw: true, wrong: !!(typedPw && lastErr && lastErr.wrongPassword) };
+    if (typedPw && usedPw && pwRemember) rememberPdfPassword(usedPw);
+    if (text.replace(/\s/g, "").length < 20) return err("這份 PDF 裡沒有文字（可能是「列印成 PDF」存的圖片）。請用信件或網站下載的原始 PDF。");
+
+    const w = parseTwWaterText(text);
+    if (w.ok) {
+      return finish([{
+        kind: "water", defaultItem: DEFAULT_WATER_ITEM,
+        parsed: {
+          ...w, invoiceNo: w.docNo, total: w.amount, itemName: `水費 ${w.waterSub ?? "?"}＋代徵 ${w.levySub ?? "?"}`,
+          phoneMasked: `水表${w.meterNo}`, subject: `水表 ${w.meterNo}`,
+          billMonthLabel: periodNote(w.periodStart, w.periodEnd, w.usage, "water"),
+        },
+      }]);
+    }
+    const e = parseTaipowerText(text);
+    if (e.ok) {
+      // 一張憑證有幾戶就幾張確認卡，每戶各記一筆
+      return finish(e.accounts.map((a, i) => ({
+        kind: "electric", defaultItem: `${DEFAULT_ELECTRIC_ITEM}-${a.label}`,
+        parsed: {
+          kind: "electric", label: a.label, invoiceNo: a.invoiceNo || `${e.receiptNo}-${a.meterNo}`, docNo: a.invoiceNo || e.receiptNo,
+          meterNo: a.meterNo, date: a.date, total: a.amount, amount: a.amount, usage: a.usage, dailyAvg: a.dailyAvg,
+          periodStart: a.periodStart, periodEnd: a.periodEnd, itemName: `${a.label} ${a.usage} 度`,
+          phoneMasked: `電號${a.meterNo}`, subject: `電號 ${a.meterNo}（${a.label}）`,
+          billMonthLabel: electricNote(a.periodStart, a.periodEnd, a.usage, a.label),
+          warnings: i === 0 ? e.warnings : [],
+        },
+      })));
+    }
+    if (parseTwmBillText(text, todayISO(), f.name).ok) return err("這是台灣大哥大電信帳單，沒有付款證明。請用下面的「匯入 PDF 帳單（待扣款）」。");
+    const known = [w, e].map((r) => r.error).find((m) => m && !/認不出/.test(m));
+    const snippet = /台灣電力|台灣自來水/.test(text) ? `\n\n讀到的文字（前 400 字）：\n${text.replace(/\s+/g, " ").slice(0, 400)}` : "";
+    return err((known || `認不出這份 PDF。目前 PDF 只認得：${WATER_SUPPORTED}；${ELECTRIC_SUPPORTED}`) + snippet);
+  };
   const importInvoices = async (fileList) => {
     const files = Array.from(fileList || []);
     const seen = new Set(expenses.map((e) => e.invoiceNo).filter(Boolean));
-    const drafts = [];
+    const drafts = [], needs = [];
     for (const f of files) {
-      const isPdf = /\.pdf$/i.test(f.name);
-      let parsed, kind = "invoice";
-      if (!isPdf) {
-        parsed = parseChtInvoice(await f.arrayBuffer());
-        if (parsed.ok) parsed = { ...parsed, subject: `電話 ${parsed.phoneMasked}` };
-      } else {
-        // PDF：先讀出文字，再看是哪一種帳單
-        let text = "";
-        try { text = await readPdfText(await f.arrayBuffer(), ""); } catch (e) {
-          drafts.push({ key: genId(), fileName: f.name, error: e.needPassword ? "這份 PDF 有密碼。有密碼的電信帳單請用下面的「匯入 PDF 帳單（待扣款）」。" : "讀不了這份 PDF：" + (e.message || e) });
-          continue;
-        }
-        if (text.replace(/\s/g, "").length < 20) {
-          drafts.push({ key: genId(), fileName: f.name, error: "這份 PDF 裡沒有文字（可能是「列印成 PDF」存的圖片）。請用信件或網站下載的原始 PDF。" });
-          continue;
-        }
-        const w = parseTwWaterText(text);
-        if (w.ok) {
-          kind = "water";
-          parsed = {
-            ...w, invoiceNo: w.docNo, total: w.amount, itemName: `水費 ${w.waterSub ?? "?"}＋代徵 ${w.levySub ?? "?"}`,
-            phoneMasked: `水表${w.meterNo}`, subject: `水表 ${w.meterNo}`,
-            billMonthLabel: periodNote(w.periodStart, w.periodEnd, w.usage, "water"),
-          };
-        } else if (parseTwmBillText(text, todayISO(), f.name).ok) {
-          drafts.push({ key: genId(), fileName: f.name, error: "這是台灣大哥大電信帳單，沒有付款證明。請用下面的「匯入 PDF 帳單（待扣款）」。" });
-          continue;
-        } else {
-          parsed = { ok: false, error: w.error && !/認不出/.test(w.error) ? w.error : "認不出這份 PDF。目前 PDF 只認得：" + WATER_SUPPORTED };
-        }
-      }
-      if (!parsed.ok) { drafts.push({ key: genId(), fileName: f.name, error: parsed.error }); continue; }
-      const dup = seen.has(parsed.invoiceNo);
-      seen.add(parsed.invoiceNo);
-      const remembered = findInvoiceName(invoiceNames, parsed.phoneMasked);
-      drafts.push({
-        key: genId(), fileName: f.name, parsed, kind, dup,
-        date: kind === "water" ? parsed.date : parsed.date,
-        category: defaultInvoiceCategory(),
-        remembered,                                   // 這支電話（或水表）之前記住的項目名稱（沒有就是空字串）
-        item: remembered || (kind === "water" ? DEFAULT_WATER_ITEM : (parsed.phoneMasked ? DEFAULT_PHONE_ITEM : parsed.itemName)),
-        saveName: !remembered && kind !== "water",    // 水費預設就叫「水費」，不用特別記住
-        price: String(parsed.total),
-        note: parsed.billMonthLabel,
-      });
+      const r = await draftsForFile(f, seen, "");
+      drafts.push(...r.drafts);
+      if (r.needPw) needs.push({ key: genId(), file: f, wrong: false });
     }
     setInvoiceDrafts(drafts);
+    setPwNeeded(needs);
+    setPwText("");
     setImportMsg("");
+  };
+  // 有密碼的 PDF：輸入密碼後再讀一次，把結果接在已經讀好的確認卡後面
+  const retryWithPassword = async (item) => {
+    if (!pwText) return;
+    const seen = new Set([...expenses.map((e) => e.invoiceNo), ...invoiceDrafts.map((d) => d.parsed && d.parsed.invoiceNo)].filter(Boolean));
+    const r = await draftsForFile(item.file, seen, pwText);
+    if (r.needPw) { setPwNeeded((l) => l.map((x) => (x.key === item.key ? { ...x, wrong: true } : x))); return; }
+    setInvoiceDrafts((ds) => [...ds, ...r.drafts]);
+    setPwNeeded((l) => l.filter((x) => x.key !== item.key));
+    setPwText("");
   };
   const patchInvoiceDraft = (key, patch) => setInvoiceDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...patch } : d)));
   const invoiceDraftProblem = (d) => {
@@ -243,7 +290,7 @@ export default function SettingsModal({
     let nextReadings = utilityReadings || [];
     let readingCount = 0;
     ready.forEach((d, i) => {
-      if (d.kind !== "water") return;
+      if (d.kind !== "water" && d.kind !== "electric") return;
       const recs = buildReadings({ ...d.parsed, amount: Number(d.price) }, genId);
       recs[0].expenseId = added[i].id;
       nextReadings = mergeReadings(nextReadings, recs);
@@ -473,7 +520,7 @@ export default function SettingsModal({
               <Upload size={16} /> 匯入帳單證明
             </button>
             <div style={{ fontSize: 11.5, color: "#A79C89", margin: "-4px 2px 12px" }}>
-              目前認得：{INVOICE_SUPPORTED}；{WATER_SUPPORTED}
+              目前認得：{INVOICE_SUPPORTED}；{WATER_SUPPORTED}；{ELECTRIC_SUPPORTED}
             </div>
 
             <button onClick={onOpenPending}
@@ -484,6 +531,25 @@ export default function SettingsModal({
               沒有付款證明的帳單（例如電信帳單）先放進待扣款，信用卡扣了再記帳。
             </div>
 
+            {pwNeeded.map((it) => (
+              <div key={it.key} style={{ border: "1px solid #E0D5BC", borderRadius: 12, padding: 12, marginBottom: 12, background: "#fff" }}>
+                <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 6, wordBreak: "break-all" }}>{it.file.name}</div>
+                <div style={{ fontSize: 13, marginBottom: 6, color: it.wrong ? STAMP : "#3A342A" }}>{it.wrong ? "密碼不正確，請再輸入一次" : "這份 PDF 有密碼，請輸入"}</div>
+                <input type="password" value={pwText} onChange={(e) => setPwText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") retryWithPassword(it); }} style={{ ...inputStyle, marginBottom: 8 }} />
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#5C5343", marginBottom: 8 }}>
+                  <input type="checkbox" checked={pwRemember} onChange={(e) => setPwRemember(e.target.checked)} />
+                  記住在這台裝置（不會上傳到雲端）
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setPwNeeded((l) => l.filter((x) => x.key !== it.key))}
+                    style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid #E0D5BC", background: "#fff", color: "#5C5343", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>略過</button>
+                  <button onClick={() => retryWithPassword(it)}
+                    style={{ flex: 2, padding: "9px 0", borderRadius: 10, border: "none", background: STAMP, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: pwText ? 1 : 0.45 }}>讀取</button>
+                </div>
+              </div>
+            ))}
+
             {invoiceDrafts.length > 0 && (
               <div style={{ border: "1px solid #E0D5BC", borderRadius: 12, padding: 12, marginBottom: 12, background: "#FBF8F0" }}>
                 <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 10 }}>確認後才會記帳。分類和項目可以改。</div>
@@ -492,14 +558,14 @@ export default function SettingsModal({
                   return (
                     <div key={d.key} style={{ borderBottom: "1px dashed #D8CBAE", paddingBottom: 10, marginBottom: 10 }}>
                       <div style={{ fontSize: 12, color: "#8A8072", marginBottom: 6, wordBreak: "break-all" }}>
-                        {d.fileName}{d.parsed ? `　${d.kind === "water" ? "單據" : "發票"} ${d.parsed.invoiceNo}` : ""}
+                        {d.fileName}{d.parsed ? `　${d.kind === "invoice" ? "發票" : d.kind === "water" ? "單據" : "電費發票"} ${d.parsed.invoiceNo}` : ""}
                       </div>
-                      {d.error && <div style={{ fontSize: 12.5, color: STAMP }}>{d.error}</div>}
-                      {d.dup && <div style={{ fontSize: 12.5, color: STAMP }}>這張{d.kind === "water" ? "收據" : "發票"}已經記過了（{d.parsed.invoiceNo}），不會再記一次。</div>}
+                      {d.error && <div style={{ fontSize: 12.5, color: STAMP, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{d.error}</div>}
+                      {d.dup && <div style={{ fontSize: 12.5, color: STAMP }}>這張{d.kind === "water" ? "收據" : d.kind === "electric" ? "電費發票" : "發票"}已經記過了（{d.parsed.invoiceNo}），不會再記一次。</div>}
                       {d.parsed && !d.dup && (
                         <div>
                           {d.parsed.warnings.map((w) => <div key={w} style={{ fontSize: 12, color: STAMP, marginBottom: 6 }}>{w}</div>)}
-                          <label style={fieldLabel}>{d.kind === "water" ? "日期（水費扣繳日）" : "日期（發票開立日）"}</label>
+                          <label style={fieldLabel}>{d.kind === "water" || d.kind === "electric" ? "日期（扣繳日）" : "日期（發票開立日）"}</label>
                           <input type="text" value={d.date} onChange={(e) => patchInvoiceDraft(d.key, { date: e.target.value })} style={inputStyle} />
                           <label style={fieldLabel}>分類</label>
                           <select value={d.category} onChange={(e) => patchInvoiceDraft(d.key, { category: e.target.value })} style={inputStyle}>
@@ -526,7 +592,7 @@ export default function SettingsModal({
                               )}
                             </div>
                           )}
-                          <label style={fieldLabel}>金額（{d.kind === "water" ? "代繳總金額" : "發票"}：{d.parsed.itemName}）</label>
+                          <label style={fieldLabel}>金額（{d.kind === "water" ? "代繳總金額" : d.kind === "electric" ? "應繳金額" : "發票"}：{d.parsed.itemName}）</label>
                           <input type="text" inputMode="numeric" value={d.price} onChange={(e) => patchInvoiceDraft(d.key, { price: e.target.value })} style={inputStyle} />
                           <label style={fieldLabel}>備註</label>
                           <input type="text" value={d.note} onChange={(e) => patchInvoiceDraft(d.key, { note: e.target.value })} style={{ ...inputStyle, marginBottom: 4 }} />

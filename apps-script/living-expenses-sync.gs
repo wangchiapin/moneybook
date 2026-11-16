@@ -86,6 +86,7 @@ function syncLivingExpenses() {
     return [
       fsStr(f.kind) === 'electric' ? '電' : '水',
       fsStr(f.meterNo),
+      fsStr(f.label),
       fsStr(f.periodStart),
       fsStr(f.periodEnd),
       fsNum(f.usage),
@@ -95,14 +96,14 @@ function syncLivingExpenses() {
       fsNumOrBlank(f.amount)
     ];
   });
-  utilRows.sort((a, b) => (a[0] + a[2] < b[0] + b[2] ? -1 : a[0] + a[2] > b[0] + b[2] ? 1 : 0));   // 先水後電、再依期間排序
+  utilRows.sort((a, b) => (a[0] + a[1] + a[3] < b[0] + b[1] + b[3] ? -1 : a[0] + a[1] + a[3] > b[0] + b[1] + b[3] ? 1 : 0));   // 先水後電、再依期間排序
   let utilSheet = ss.getSheetByName('水電使用');
   if (!utilSheet && utilRows.length > 0) utilSheet = ss.insertSheet('水電使用');   // 第一次有資料時自動新增分頁
   if (utilSheet) {
     utilSheet.clearContents();
-    utilSheet.appendRow(['種類', '表號', '期間起', '期間迄', '度數', '日平均', '單據號碼', '來源', '金額']);
+    utilSheet.appendRow(['種類', '表號', '名稱', '期間起', '期間迄', '度數', '日平均', '單據號碼', '來源', '金額']);
     if (utilRows.length > 0) {
-      utilSheet.getRange(2, 1, utilRows.length, 9).setValues(utilRows);
+      utilSheet.getRange(2, 1, utilRows.length, 10).setValues(utilRows);
     }
   }
 

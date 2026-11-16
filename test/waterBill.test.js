@@ -66,3 +66,48 @@ test("一份帳單建三筆；真正的帳單會取代參考值，參考值不�
   assert.equal(refAgain.find((x) => x.periodStart === "2026-04-04").usage, 21);
   assert.equal(removeReading(second, second[0].id).length, second.length - 1);
 });
+
+import { parseTaipowerText, electricNote } from "../src/taipowerBill.js";
+const POWER7 = `台灣電力公司 TAIWAN POWER COMPANY 台 灣 電 力 公 司 電子帳單清單式電費繳費憑證 日期：115/07/25
+台電區域編號 NormBDSD1574876F444DC
+收據號碼 E-116151390041150708
+收費日/扣繳日 電號 代繳帳號 用戶統編 台電統編 計費期間 用電度數 電費金額 營業稅 應繳總金額
+1150723 11615139004 9012612*8*8*9* 79634302 1150429-1150701 453 876
+用電戶名：某某 用電地址：高雄市岡山區維仁路３０巷１８號一樓 輪流停電組別：D
+本期發票資訊： 發票期別： 115年07-08月 發票號碼：DJ-29096088 金額(元)：876
+前期發票資訊： 發票期別： 115年05-06月 發票號碼：BG-29125328 金額(元)：433
+1150723 11615139208 9012612*8*8*9* 79634302 1150429-1150701 402 441
+用電戶名：某某 用電地址：高雄市岡山區維仁路３０巷１８號二樓
+本期發票資訊： 發票期別： 115年07-08月 發票號碼：DJ-29096089 金額(元)：441
+前期發票資訊： 發票期別： 115年05-06月 發票號碼：BG-29125329 金額(元)：399
+合計： 2戶 應繳金額： $1,317元 第 1頁 共 1頁 總計： 2戶 應繳金額： $1,317元`;
+test("台電繳費憑證：兩戶各一筆", () => {
+  const r = parseTaipowerText(POWER7);
+  assert.equal(r.ok, true);
+  assert.equal(r.accounts.length, 2);
+  const [a, b] = r.accounts;
+  assert.deepEqual([a.label, a.usage, a.amount, a.invoiceNo, a.date], ["一樓", 453, 876, "DJ29096088", "2026-07-23"]);
+  assert.deepEqual([b.label, b.usage, b.amount, b.invoiceNo], ["二樓", 402, 441, "DJ29096089"]);
+  assert.equal(a.periodStart, "2026-04-29");
+  assert.equal(a.periodEnd, "2026-07-01");
+  assert.equal(r.total, 1317);
+  assert.deepEqual(r.warnings, []);
+  assert.equal(electricNote(a.periodStart, a.periodEnd, a.usage, a.label), "115年4/29～7/1，用電 453 度（一樓）");
+});
+test("台電：金額加不起來會提醒；通知單不收", () => {
+  assert.equal(parseTaipowerText(POWER7.replaceAll("1,317", "1,300")).warnings.length, 1);
+  assert.equal(parseTaipowerText("台灣電力公司 電費通知單").ok, false);
+});
+
+test("電費：一戶一筆使用紀錄，沒有上期、去年同期的參考值", () => {
+  const r = parseTaipowerText(POWER7);
+  const a = r.accounts[0];
+  const recs = buildReadings({ kind: "electric", meterNo: a.meterNo, periodStart: a.periodStart, periodEnd: a.periodEnd, usage: a.usage, dailyAvg: a.dailyAvg, docNo: a.invoiceNo, amount: a.amount }, gid);
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].kind, "electric");
+  assert.equal(recs[0].source, "bill");
+  // 一樓、二樓是不同電號，不會互相覆蓋
+  const b = r.accounts[1];
+  const merged = mergeReadings(recs, buildReadings({ kind: "electric", meterNo: b.meterNo, periodStart: b.periodStart, periodEnd: b.periodEnd, usage: b.usage, docNo: b.invoiceNo, amount: b.amount }, gid));
+  assert.equal(merged.length, 2);
+});
