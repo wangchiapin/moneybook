@@ -19,8 +19,10 @@ export function electricNote(periodStart, periodEnd, usage, label) {
 
 export function parseTaipowerText(text) {
   const flat = half(String(text || "")).replace(/　/g, " ").replace(/\s+/g, " ");
-  if (!/台灣電力|TAIWAN POWER/i.test(flat)) return { ok: false, error: "認不出這份帳單。" };
-  if (!/電費繳費憑證/.test(flat)) return { ok: false, error: "這不是扣款後的「電費繳費憑證」。電費通知單是扣款前的，金額是預計的，請匯入扣款後的憑證。" };
+  // 標題常是「台 灣 電 力 公 司」（字與字之間有空白），所以比對時先把空白全拿掉
+  const compact = flat.replace(/\s/g, "");
+  if (!/台灣電力|TAIWANPOWER|電費繳費憑證/i.test(compact)) return { ok: false, error: "認不出這份帳單。" };
+  if (!/電費繳費憑證/.test(compact)) return { ok: false, error: "這不是扣款後的「電費繳費憑證」。電費通知單是扣款前的，金額是預計的，請匯入扣款後的憑證。" };
 
   const receiptNo = (flat.match(/收據號碼\s*[:：]?\s*(E-?\d+)/) || [])[1] || "";
 

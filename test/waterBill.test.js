@@ -111,3 +111,11 @@ test("電費：一戶一筆使用紀錄，沒有上期、去年同期的參考�
   const merged = mergeReadings(recs, buildReadings({ kind: "electric", meterNo: b.meterNo, periodStart: b.periodStart, periodEnd: b.periodEnd, usage: b.usage, docNo: b.invoiceNo, amount: b.amount }, gid));
   assert.equal(merged.length, 2);
 });
+
+test("台電：標題只有「台 灣 電 力 公 司」（字間有空白）、沒有連在一起的公司名也要讀得到", () => {
+  const t = POWER7.replace("台灣電力公司 TAIWAN POWER COMPANY ", "").replace("台 灣 電 力 公 司", "台 灣 電 力 公 司");
+  assert.equal(t.includes("台灣電力公司"), false);
+  const r = parseTaipowerText(t);
+  assert.equal(r.ok, true);
+  assert.equal(r.accounts.length, 2);
+});

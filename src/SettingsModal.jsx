@@ -242,7 +242,7 @@ export default function SettingsModal({
     }
     if (parseTwmBillText(text, todayISO(), f.name).ok) return err("這是台灣大哥大電信帳單，沒有付款證明。請用下面的「匯入 PDF 帳單（待扣款）」。");
     const known = [w, e].map((r) => r.error).find((m) => m && !/認不出/.test(m));
-    const snippet = /台灣電力|台灣自來水/.test(text) ? `\n\n讀到的文字（前 400 字）：\n${text.replace(/\s+/g, " ").slice(0, 400)}` : "";
+    const snippet = `\n\n讀到的文字（前 400 字）：\n${text.replace(/\s+/g, " ").slice(0, 400)}`;
     return err((known || `認不出這份 PDF。目前 PDF 只認得：${WATER_SUPPORTED}；${ELECTRIC_SUPPORTED}`) + snippet);
   };
   const importInvoices = async (fileList) => {
