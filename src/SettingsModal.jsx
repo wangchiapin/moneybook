@@ -263,7 +263,7 @@ export default function SettingsModal({
     let pending = pendingBills || [], toPending = 0, dupCount = 0;
     sortInbox(billInbox).forEach((item) => {
       const name = item.fileName || "帳單";
-      if (item.status === "needpw") { drafts.push(...errDraft(name, "機器人打不開這份 PDF（密碼不對）。請把這份的密碼加進機器人設定的 PDF_PASSWORDS，明天會自動再試；或自己下載後用上面的「匯入帳單證明」。", item.id).drafts); return; }
+      if (item.status === "needpw") { drafts.push(...errDraft(name, "機器人打不開這份 PDF（密碼不對）。請把這份的密碼加進機器人的秘密設定 BILL_PDF_PASSWORDS（一行一個），隔天會自動再讀；或自己下載後用上面的「匯入帳單證明」。", item.id).drafts); return; }
       if (item.status === "error") { drafts.push(...errDraft(name, `機器人讀不了這份：${item.error || "原因不明"}`, item.id).drafts); return; }
       let r;
       try {
