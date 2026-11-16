@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseTwWaterText } from "../src/waterBill.js";
-import { addMonths, buildReadings, mergeReadings, periodNote, removeReading } from "../src/utilityReadings.js";
+import { addMonths, buildReadings, mergeReadings, periodNote, removeReading, yoyRows, yoySentence } from "../src/utilityReadings.js";
 
 // 照 115年9月收據整理（去掉姓名地址）
 const RECEIPT = `台灣自來水股份有限公司 Taiwan Water Corporation 115 年 9 月轉帳代繳(代收)水費電子繳費憑證
@@ -118,4 +118,21 @@ test("台電：標題只有「台 灣 電 力 公 司」（字間有空白）、
   const r = parseTaipowerText(t);
   assert.equal(r.ok, true);
   assert.equal(r.accounts.length, 2);
+});
+
+test("同期比較：本期配去年同期，開始日差 1 天也算；沒有去年資料的不列", () => {
+  const mk = (ps, pe, usage, source = "bill") => ({ id: ps, kind: "water", meterNo: "M", periodStart: ps, periodEnd: pe, usage, source });
+  const list = [
+    mk("2025-06-05", "2025-08-03", 33, "ref"),
+    mk("2026-04-04", "2026-06-03", 21, "ref"),
+    mk("2026-06-04", "2026-08-03", 22),
+  ];
+  const rows = yoyRows(list);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].今年, 22);
+  assert.equal(rows[0].去年同期, 33);
+  assert.equal(yoySentence(rows[0]), "最近一期 22 度，去年同期 33 度，少 11 度（-33%）");
+  assert.equal(yoyRows([mk("2026-04-04", "2026-06-03", 21)]).length, 0);
+  assert.match(yoySentence({ cur: { usage: 30 }, prev: { usage: 20 } }), /多 10 度（\+50%）/);
+  assert.match(yoySentence({ cur: { usage: 20 }, prev: { usage: 20 } }), /一樣多/);
 });

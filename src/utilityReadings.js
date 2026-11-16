@@ -95,3 +95,30 @@ export function shortLabel(periodStart, periodEnd) {
   const roc = sy - 1911;
   return endEff === sm ? `${roc}年${sm}月` : `${roc}年${sm}～${endEff}月`;
 }
+
+// 同期比較：每一期配上「去年同一期」（開始日差 3 天內都算同一期）。回傳由舊到新的列，只含找得到去年資料的期別
+export function yoyRows(list) {
+  const arr = (Array.isArray(list) ? list : []).filter(Boolean)
+    .sort((a, b) => (a.periodStart < b.periodStart ? -1 : a.periodStart > b.periodStart ? 1 : 0));
+  const rows = [];
+  arr.forEach((r) => {
+    const target = addMonths(r.periodStart, -12);
+    let best = null, bestGap = 99;
+    arr.forEach((p) => {
+      if (p === r) return;
+      const gap = Math.abs(Date.parse(p.periodStart) - Date.parse(target)) / 86400000;
+      if (gap <= 3 && gap < bestGap) { best = p; bestGap = gap; }
+    });
+    if (best) rows.push({ name: shortLabel(r.periodStart, r.periodEnd), cur: r, prev: best, 今年: r.usage, 去年同期: best.usage });
+  });
+  return rows;
+}
+// 一句話結論：最近一期 22 度，去年同期 33 度，少 11 度（-33%）
+export function yoySentence(row) {
+  if (!row) return "";
+  const diff = row.cur.usage - row.prev.usage;
+  const head = `最近一期 ${row.cur.usage} 度，去年同期 ${row.prev.usage} 度`;
+  if (diff === 0) return `${head}，一樣多`;
+  const pct = row.prev.usage ? `（${diff > 0 ? "+" : "-"}${Math.round((Math.abs(diff) / row.prev.usage) * 100)}%）` : "";
+  return `${head}，${diff > 0 ? "多" : "少"} ${Math.abs(diff)} 度${pct}`;
+}
