@@ -1,10 +1,11 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { X, Plus, Trash2, Download, Upload, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PAPER, STAMP, GOOD, LEGACY_INCOME_LABELS, SYNCED_INCOME_SOURCE_ID, DEFAULT_APP_NAME, genId, todayISO } from "./lib.js";
 import { CatDot, fieldLabel, inputStyle } from "./components.jsx";
 import { parseChtInvoice, findInvoiceName, setInvoiceName, removeInvoiceName, DEFAULT_PHONE_ITEM, INVOICE_SUPPORTED } from "./invoiceImport.js";
-import { readPdfText, parseTwmBillText, getSavedPdfPasswords, rememberPdfPassword } from "./pdfBill.js";
+import { readPdfText, addPendingBill, getSavedPdfPasswords, rememberPdfPassword } from "./pdfBill.js";
+import { b64ToArrayBuffer, classifyBillText, sortInbox } from "./billInbox.js";
 import { parseTaipowerText, electricNote, ELECTRIC_SUPPORTED, DEFAULT_ELECTRIC_ITEM } from "./taipowerBill.js";
 import { parseTwWaterText, WATER_SUPPORTED, DEFAULT_WATER_ITEM } from "./waterBill.js";
 import { buildReadings, mergeReadings, periodNote } from "./utilityReadings.js";
@@ -29,6 +30,8 @@ export default function SettingsModal({
   invoiceNames, setInvoiceNamesPersist,
   utilityReadings, setUtilityReadingsPersist,
   onOpenPending,
+  pendingBills, setPendingBillsPersist,
+  billInbox, onInboxRemove, autoLoadInbox,
   setStatsPasswordPersist,
   initialSection,
   onClose,
@@ -172,51 +175,40 @@ export default function SettingsModal({
   // 讀進來先放在確認卡，按「寫進帳本」才會真的記帳。發票號碼存在那筆支出的 invoiceNo，用來擋重複匯入。
   // 項目名稱：同一支電話第一次自己填，之後自動沿用（記在 invoiceNames，可以在下面「已記住的項目名稱」修改）。
   const defaultInvoiceCategory = () => (categories.find((c) => c.id === "居家") || categories[0] || { id: "" }).id;
-  // 讀一個檔案，回傳 { drafts, needPw, wrong }。typedPw：使用者剛輸入的 PDF 密碼
-  const draftsForFile = async (f, seen, typedPw) => {
-    const err = (error) => ({ drafts: [{ key: genId(), fileName: f.name, error }] });
-    const finish = (parsedList) => {
-      const out = [];
-      parsedList.forEach((x) => {
-        const parsed = x.parsed;
-        const dup = seen.has(parsed.invoiceNo);
-        seen.add(parsed.invoiceNo);
-        const remembered = findInvoiceName(invoiceNames, parsed.phoneMasked);
-        out.push({
-          key: genId(), fileName: f.name, parsed, kind: x.kind, dup, date: parsed.date,
-          category: defaultInvoiceCategory(),
-          remembered,                                   // 這支電話／水表／電號之前記住的項目名稱（沒有就是空字串）
-          item: remembered || x.defaultItem,
-          saveName: !remembered && x.kind !== "water",  // 水費預設就叫「水費」，不用特別記住
-          price: String(parsed.total),
-          note: parsed.billMonthLabel,
-        });
+  const errDraft = (name, error, inboxId) => ({ drafts: [{ key: genId(), fileName: name, error, inboxId: inboxId || "" }] });
+  const finishDrafts = (name, seen, inboxId, parsedList) => {
+    const out = [];
+    parsedList.forEach((x) => {
+      const parsed = x.parsed;
+      const dup = seen.has(parsed.invoiceNo);
+      seen.add(parsed.invoiceNo);
+      const remembered = findInvoiceName(invoiceNames, parsed.phoneMasked);
+      out.push({
+        key: genId(), fileName: name, inboxId: inboxId || "", parsed, kind: x.kind, dup, date: parsed.date,
+        category: defaultInvoiceCategory(),
+        remembered,                                   // 這支電話／水表／電號之前記住的項目名稱（沒有就是空字串）
+        item: remembered || x.defaultItem,
+        saveName: !remembered && x.kind !== "water",  // 水費預設就叫「水費」，不用特別記住
+        price: String(parsed.total),
+        note: parsed.billMonthLabel,
       });
-      return { drafts: out };
-    };
-    if (!/\.pdf$/i.test(f.name)) {
-      let parsed = parseChtInvoice(await f.arrayBuffer());
-      if (!parsed.ok) return err(parsed.error);
-      parsed = { ...parsed, subject: `電話 ${parsed.phoneMasked}` };
-      return finish([{ parsed, kind: "invoice", defaultItem: parsed.phoneMasked ? DEFAULT_PHONE_ITEM : parsed.itemName }]);
-    }
-    // PDF：先讀出文字（沒有密碼就空白試、再試這台裝置記住的密碼），再看是哪一種帳單
-    const buf = await f.arrayBuffer();
-    const tries = typedPw ? [typedPw] : ["", ...getSavedPdfPasswords()];
-    let text = null, lastErr = null, usedPw = "";
-    for (const pw of tries) {
-      try { text = await readPdfText(buf, pw); usedPw = pw; break; } catch (e) {
-        lastErr = e;
-        if (!e.needPassword) return err("讀不了這份 PDF：" + (e.message || e));
-      }
-    }
-    if (text === null) return { drafts: [], needPw: true, wrong: !!(typedPw && lastErr && lastErr.wrongPassword) };
-    if (typedPw && usedPw && pwRemember) rememberPdfPassword(usedPw);
-    if (text.replace(/\s/g, "").length < 20) return err("這份 PDF 裡沒有文字（可能是「列印成 PDF」存的圖片）。請用信件或網站下載的原始 PDF。");
-
-    const w = parseTwWaterText(text);
-    if (w.ok) {
-      return finish([{
+    });
+    return { drafts: out };
+  };
+  // 中華電信 .htm（手動上傳的檔案，或機器人放進收件匣的原始檔）
+  const draftsFromHtm = (name, buf, seen, inboxId) => {
+    let parsed = parseChtInvoice(buf);
+    if (!parsed.ok) return errDraft(name, parsed.error, inboxId);
+    parsed = { ...parsed, subject: `電話 ${parsed.phoneMasked}` };
+    return finishDrafts(name, seen, inboxId, [{ parsed, kind: "invoice", defaultItem: parsed.phoneMasked ? DEFAULT_PHONE_ITEM : parsed.itemName }]);
+  };
+  // PDF 讀出來的文字 → 水費／電費確認卡。台灣大哥大帳單沒有付款證明：手動匯入時請他去「待扣款」，收件匣的則回傳 twm 讓呼叫的人放進待扣款
+  const draftsFromText = (name, text, seen, inboxId, fromInbox) => {
+    if (text.replace(/\s/g, "").length < 20) return errDraft(name, "這份 PDF 裡沒有文字（可能是「列印成 PDF」存的圖片）。請用信件或網站下載的原始 PDF。", inboxId);
+    const c = classifyBillText(text, todayISO(), name);
+    if (c.kind === "water") {
+      const w = c.water;
+      return finishDrafts(name, seen, inboxId, [{
         kind: "water", defaultItem: DEFAULT_WATER_ITEM,
         parsed: {
           ...w, invoiceNo: w.docNo, total: w.amount, itemName: `水費 ${w.waterSub ?? "?"}＋代徵 ${w.levySub ?? "?"}`,
@@ -225,10 +217,10 @@ export default function SettingsModal({
         },
       }]);
     }
-    const e = parseTaipowerText(text);
-    if (e.ok) {
+    if (c.kind === "electric") {
+      const e = c.electric;
       // 一張憑證有幾戶就幾張確認卡，每戶各記一筆
-      return finish(e.accounts.map((a, i) => ({
+      return finishDrafts(name, seen, inboxId, e.accounts.map((a, i) => ({
         kind: "electric", defaultItem: `${DEFAULT_ELECTRIC_ITEM}-${a.label}`,
         parsed: {
           kind: "electric", label: a.label, invoiceNo: a.invoiceNo || `${e.receiptNo}-${a.meterNo}`, docNo: a.invoiceNo || e.receiptNo,
@@ -240,11 +232,75 @@ export default function SettingsModal({
         },
       })));
     }
-    if (parseTwmBillText(text, todayISO(), f.name).ok) return err("這是台灣大哥大電信帳單，沒有付款證明。請用下面的「匯入 PDF 帳單（待扣款）」。");
-    const known = [w, e].map((r) => r.error).find((m) => m && !/認不出/.test(m));
+    if (c.kind === "twm") {
+      if (fromInbox) return { drafts: [], twm: c.twm };
+      return errDraft(name, "這是台灣大哥大電信帳單，沒有付款證明。請用下面的「匯入 PDF 帳單（待扣款）」。", inboxId);
+    }
     const snippet = `\n\n讀到的文字（前 400 字）：\n${text.replace(/\s+/g, " ").slice(0, 400)}`;
-    return err((known || `認不出這份 PDF。目前 PDF 只認得：${WATER_SUPPORTED}；${ELECTRIC_SUPPORTED}`) + snippet);
+    return errDraft(name, (c.error || `認不出這份 PDF。目前 PDF 只認得：${WATER_SUPPORTED}；${ELECTRIC_SUPPORTED}`) + snippet, inboxId);
   };
+  // 讀一個檔案，回傳 { drafts, needPw, wrong }。typedPw：使用者剛輸入的 PDF 密碼
+  const draftsForFile = async (f, seen, typedPw) => {
+    if (!/\.pdf$/i.test(f.name)) return draftsFromHtm(f.name, await f.arrayBuffer(), seen, "");
+    // PDF：先讀出文字（沒有密碼就空白試、再試這台裝置記住的密碼），再看是哪一種帳單
+    const buf = await f.arrayBuffer();
+    const tries = typedPw ? [typedPw] : ["", ...getSavedPdfPasswords()];
+    let text = null, lastErr = null, usedPw = "";
+    for (const pw of tries) {
+      try { text = await readPdfText(buf, pw); usedPw = pw; break; } catch (e) {
+        lastErr = e;
+        if (!e.needPassword) return errDraft(f.name, "讀不了這份 PDF：" + (e.message || e));
+      }
+    }
+    if (text === null) return { drafts: [], needPw: true, wrong: !!(typedPw && lastErr && lastErr.wrongPassword) };
+    if (typedPw && usedPw && pwRemember) rememberPdfPassword(usedPw);
+    return draftsFromText(f.name, text, seen, "", false);
+  };
+  // 📬 自動收到的帳單：把收件匣每一份讀成確認卡；台灣大哥大的直接放進待扣款；已經記過的直接清掉
+  const loadInbox = () => {
+    const seen = new Set(expenses.map((e) => e.invoiceNo).filter(Boolean));
+    const drafts = [], removeIds = [];
+    let pending = pendingBills || [], toPending = 0, dupCount = 0;
+    sortInbox(billInbox).forEach((item) => {
+      const name = item.fileName || "帳單";
+      if (item.status === "needpw") { drafts.push(...errDraft(name, "機器人打不開這份 PDF（密碼不對）。請把這份的密碼加進機器人設定的 PDF_PASSWORDS，明天會自動再試；或自己下載後用上面的「匯入帳單證明」。", item.id).drafts); return; }
+      if (item.status === "error") { drafts.push(...errDraft(name, `機器人讀不了這份：${item.error || "原因不明"}`, item.id).drafts); return; }
+      let r;
+      try {
+        r = item.type === "htm" ? draftsFromHtm(name, b64ToArrayBuffer(item.htmBase64), seen, item.id) : draftsFromText(name, String(item.text || ""), seen, item.id, true);
+      } catch (e) { r = errDraft(name, "讀取失敗：" + (e && e.message ? e.message : e), item.id); }
+      if (r.twm) {
+        const bill = r.twm;
+        const known = pending.some((b) => b.billNo === bill.billNo) || expenses.some((e) => e.invoiceNo === bill.billNo);
+        if (!known) {
+          pending = addPendingBill(pending, {
+            id: genId(), billNo: bill.billNo, provider: "台灣大哥大", phoneMasked: bill.phoneMasked,
+            amount: bill.amount, billMonthLabel: bill.billMonthLabel, noPayNeeded: bill.noPayNeeded, dueDate: bill.dueDate, payMethod: bill.payMethod, addedAt: Date.now(),
+          });
+          toPending++;
+        } else dupCount++;
+        removeIds.push(item.id);
+        return;
+      }
+      const dups = r.drafts.filter((d) => d.dup);
+      if (dups.length && dups.length === r.drafts.length) { dupCount += dups.length; removeIds.push(item.id); return; }
+      drafts.push(...r.drafts.filter((d) => !d.dup));
+    });
+    if (toPending && setPendingBillsPersist) setPendingBillsPersist(pending);
+    if (removeIds.length && onInboxRemove) onInboxRemove(removeIds);
+    setInvoiceDrafts(drafts);
+    setPwNeeded([]);
+    setImportMsg([
+      toPending ? `${toPending} 份台灣大哥大帳單已放進待扣款。` : "",
+      dupCount ? `${dupCount} 份已經記過的帳單已自動清掉。` : "",
+      !drafts.length && !toPending && !dupCount ? "收件匣是空的。" : "",
+    ].filter(Boolean).join(""));
+  };
+  // 從記帳頁的「📬 自動收到」進來時，自動把收件匣讀成確認卡（只做一次）
+  const inboxAutoRan = useRef(false);
+  useEffect(() => {
+    if (autoLoadInbox && !inboxAutoRan.current && (billInbox || []).length) { inboxAutoRan.current = true; loadInbox(); }
+  }); // eslint-disable-line react-hooks/exhaustive-deps
   const importInvoices = async (fileList) => {
     const files = Array.from(fileList || []);
     const seen = new Set(expenses.map((e) => e.invoiceNo).filter(Boolean));
@@ -308,6 +364,8 @@ export default function SettingsModal({
       }
     });
     if (changed) setInvoiceNamesPersist(nextNames);
+    const doneIds = ready.map((d) => d.inboxId).filter(Boolean);
+    if (doneIds.length && onInboxRemove) onInboxRemove(doneIds);
     setInvoiceDrafts([]);
     setImportMsg(`從帳單證明記了 ${added.length} 筆支出${readingCount ? `，並記下 ${readingCount} 筆水電使用` : ""}`);
   };
@@ -513,6 +571,14 @@ export default function SettingsModal({
               <Upload size={16} /> 匯入舊版 Excel 記帳本（歷史資料一次搬過來）
             </button>
 
+            <button onClick={loadInbox}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 12, border: `1px solid ${(billInbox || []).length ? STAMP : "#E0D5BC"}`, background: "#fff", color: (billInbox || []).length ? STAMP : "#2B2620", fontWeight: 600, fontSize: 14, cursor: "pointer", marginBottom: 6 }}>
+              📬 自動收到的帳單（{(billInbox || []).length}）
+            </button>
+            <div style={{ fontSize: 11.5, color: "#A79C89", margin: "0 2px 12px" }}>
+              每天凌晨由收件機器人從信箱「帳單」標籤收來。看過、確認後才會記帳。
+            </div>
+
             <input ref={invoiceFileRef} type="file" accept=".htm,.html,.pdf" multiple style={{ display: "none" }}
               onChange={(e) => { if (e.target.files.length) importInvoices(e.target.files); e.target.value = ""; }} />
             <button onClick={() => invoiceFileRef.current.click()}
@@ -561,6 +627,12 @@ export default function SettingsModal({
                         {d.fileName}{d.parsed ? `　${d.kind === "invoice" ? "發票" : d.kind === "water" ? "單據" : "電費發票"} ${d.parsed.invoiceNo}` : ""}
                       </div>
                       {d.error && <div style={{ fontSize: 12.5, color: STAMP, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{d.error}</div>}
+                      {d.error && d.inboxId && onInboxRemove && (
+                        <button onClick={() => { onInboxRemove([d.inboxId]); setInvoiceDrafts((ds) => ds.filter((x) => x.key !== d.key)); }}
+                          style={{ marginTop: 6, padding: "5px 10px", borderRadius: 8, border: "1px solid #E0D5BC", background: "#fff", color: "#5C5343", fontSize: 12, cursor: "pointer" }}>
+                          從收件匣移除這份
+                        </button>
+                      )}
                       {d.dup && <div style={{ fontSize: 12.5, color: STAMP }}>這張{d.kind === "water" ? "收據" : d.kind === "electric" ? "電費發票" : "發票"}已經記過了（{d.parsed.invoiceNo}），不會再記一次。</div>}
                       {d.parsed && !d.dup && (
                         <div>

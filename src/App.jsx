@@ -8,7 +8,7 @@ import {
   onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut,
 } from "firebase/auth";
-import { doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
+import { doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { monthsCol, flattenMonthDocs, buildOps, writeOps, migrateLegacyExpenses } from "./monthStore.js";
 
 import {
@@ -25,6 +25,7 @@ import SearchTab from "./SearchTab.jsx";
 import AddExpenseSheet from "./AddExpenseSheet.jsx";
 import QuickNoteSheet from "./QuickNoteSheet.jsx";
 import SettingsModal from "./SettingsModal.jsx";
+import { sortInbox } from "./billInbox.js";
 
 const DEFAULT_AI_SETTINGS = { apiKey: "", model: "gemini-flash-latest" };
 
@@ -141,6 +142,8 @@ export default function App() {
   const [utilityReadings, setUtilityReadings] = useState([]);   // 水電使用紀錄（每個表、每一期的度數）
   const [pendingBills, setPendingBills] = useState([]);   // 待扣款：電信帳單（沒有付款證明，等信用卡真的扣了才記帳）
   const [showPending, setShowPending] = useState(false);
+  const [billInbox, setBillInbox] = useState([]);   // 📬 收件機器人放進來、等你確認的帳單（billInbox/{uid}/items）
+  const [inboxAutoLoad, setInboxAutoLoad] = useState(false);
   const [monthlyNotes, setMonthlyNotes] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [viewMonth, setViewMonth] = useState(monthKeyOf(todayISO()));
@@ -239,6 +242,21 @@ export default function App() {
     );
     return unsub;
   }, [user, retryTick]);
+
+  // 📬 自動收到的帳單：Firebase 規則還沒加或讀不到時，就當作沒有（不影響記帳）
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onSnapshot(
+      collection(db, "billInbox", user.uid, "items"),
+      (snap) => setBillInbox(sortInbox(snap.docs.map((d) => ({ id: d.id, ...d.data() })))),
+      (e) => { console.warn("讀不到自動收到的帳單：", e && e.message); setBillInbox([]); }
+    );
+    return unsub;
+  }, [user]);
+  const removeInboxItems = async (ids) => {
+    try { await Promise.all((ids || []).map((id) => deleteDoc(doc(db, "billInbox", user.uid, "items", id)))); }
+    catch (e) { console.warn("移除收件匣項目失敗：", e && e.message); }
+  };
 
   // 每月支出文件：監聽整個 months 集合，把每個月的 items 合成一份清單
   useEffect(() => {
@@ -647,6 +665,8 @@ export default function App() {
             updateMonthlyNote={updateMonthlyNote} deleteMonthlyNote={deleteMonthlyNote}
             categoryLockUnlocked={statsUnlocked} onUnlockCategoryLock={verifyStatsPassword}
             pendingBills={pendingBills} onOpenPending={() => setShowPending(true)}
+            billInboxCount={billInbox.length}
+            onOpenInbox={() => { setSettingsSection("data"); setInboxAutoLoad(true); setShowSettings(true); }}
           />
         )}
         {tab === "stats" && (
@@ -710,9 +730,11 @@ export default function App() {
           invoiceNames={invoiceNames} setInvoiceNamesPersist={setInvoiceNamesPersist}
           utilityReadings={utilityReadings} setUtilityReadingsPersist={setUtilityReadingsPersist}
           onOpenPending={() => { setShowSettings(false); setShowPending(true); }}
+          pendingBills={pendingBills} setPendingBillsPersist={setPendingBillsPersist}
+          billInbox={billInbox} onInboxRemove={removeInboxItems} autoLoadInbox={inboxAutoLoad}
           setStatsPasswordPersist={setStatsPasswordPersist}
           initialSection={settingsSection}
-          onClose={() => setShowSettings(false)}
+          onClose={() => { setShowSettings(false); setInboxAutoLoad(false); }}
         />
       )}
       {showQuickNote && (

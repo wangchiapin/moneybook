@@ -67,6 +67,7 @@ test("一份帳單建三筆；真正的帳單會取代參考值，參考值不�
   assert.equal(removeReading(second, second[0].id).length, second.length - 1);
 });
 
+import { classifyBillText, b64ToArrayBuffer, sortInbox } from "../src/billInbox.js";
 import { parseTaipowerText, electricNote } from "../src/taipowerBill.js";
 const POWER7 = `台灣電力公司 TAIWAN POWER COMPANY 台 灣 電 力 公 司 電子帳單清單式電費繳費憑證 日期：115/07/25
 台電區域編號 NormBDSD1574876F444DC
@@ -135,4 +136,15 @@ test("同期比較：本期配去年同期，開始日差 1 天也算；沒有�
   assert.equal(yoyRows([mk("2026-04-04", "2026-06-03", 21)]).length, 0);
   assert.match(yoySentence({ cur: { usage: 30 }, prev: { usage: 20 } }), /多 10 度（\+50%）/);
   assert.match(yoySentence({ cur: { usage: 20 }, prev: { usage: 20 } }), /一樣多/);
+});
+
+test("收件匣：依文字分辨水費、電費、台灣大哥大、不認得的", () => {
+  assert.equal(classifyBillText(RECEIPT, "2026-11-16", "a.pdf").kind, "water");
+  assert.equal(classifyBillText(POWER7, "2026-11-16", "b.pdf").kind, "electric");
+  assert.equal(classifyBillText("這是一封普通的信，沒有帳單內容，只是很長很長很長很長很長", "2026-11-16", "c.pdf").kind, "unknown");
+});
+test("收件匣：base64 還原成原始位元組、依時間排序", () => {
+  const b = b64ToArrayBuffer(Buffer.from([1, 2, 250]).toString("base64"));
+  assert.deepEqual([...new Uint8Array(b)], [1, 2, 250]);
+  assert.deepEqual(sortInbox([{ id: "b", createdAt: "2026-11-17" }, { id: "a", createdAt: "2026-11-16" }]).map((x) => x.id), ["a", "b"]);
 });

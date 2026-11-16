@@ -10,7 +10,7 @@ export default function LedgerTab({
   getIncomeAmount, saveIncome,
   monthlyNotes, addMonthlyNote, updateMonthlyNote, deleteMonthlyNote,
   categoryLockUnlocked, onUnlockCategoryLock,
-  pendingBills, onOpenPending,
+  pendingBills, onOpenPending, billInboxCount, onOpenInbox,
 }) {
   const monthGroups = useMemo(() => {
     const monthExp = expenses.filter((e) => monthKeyOf(e.date) === viewMonth);
@@ -43,6 +43,14 @@ export default function LedgerTab({
           .ledger-3col .col-income { order: 3; }
         }
       `}</style>
+
+      {(billInboxCount || 0) > 0 && (
+        <button onClick={onOpenInbox}
+          style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, textAlign: "left", background: "#fff", border: "1px solid #4A6FA5", borderRadius: 12, padding: "10px 12px", marginBottom: 12, cursor: "pointer" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#4A6FA5" }}>📬 自動收到 {billInboxCount} 份帳單，等你確認</span>
+          <span style={{ fontSize: 12, color: "#4A6FA5", whiteSpace: "nowrap" }}>查看 ›</span>
+        </button>
+      )}
 
       {(pendingBills || []).length > 0 && (
         <button onClick={onOpenPending}

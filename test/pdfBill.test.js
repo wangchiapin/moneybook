@@ -65,3 +65,9 @@ test("頁首的「-1 / 1  頁次 1 / 1」不會被當成金額", () => {
   const t2 = "台灣大哥大 -1 / 1 頁次 1 / 1 本期應繳 應繳總額$ 1,200 A751958208263";
   assert.equal(parseTwmBillText(t2, "2026-11-16").amount, 1200);
 });
+
+test("收件匣分類：台灣大哥大帳單會進待扣款", async () => {
+  const { classifyBillText } = await import("../src/billInbox.js");
+  const c = classifyBillText(SAMPLE, "2026-11-16", "x.pdf");
+  assert.equal(c.kind, "twm");
+});
