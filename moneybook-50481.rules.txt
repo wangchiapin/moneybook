@@ -1,9 +1,9 @@
 // ===== Firebase 專案 moneybook-50481 的 Firestore 規則（整份貼上取代）=====
-// 連接的 repo：moneybook、all-moneybook、huimoney、cadadiaunosminutos、generador-de-ejercicios、travelaccount、timetree-sync、diario-de-chino（學生頁與老師後台）。最後更新：2026-11-18 15:05（加 portal 第十一批：問卷調查 surveys、svRounds、students/{sid}/sv）
+// 連接的 repo：moneybook、all-moneybook、huimoney、cadadiaunosminutos、generador-de-ejercicios、travelaccount、timetree-sync、diario-de-chino（學生頁與老師後台）。最後更新：2026-11-18 15:29（加 portal 第十二批：問卷公開連結 svPublic、svResp）
 // 變更紀錄（只留最新 3 筆，新的放最上面；每次改規則都要寫日期＋時間）：
+//   - 2026-11-18 15:29 新增 portal/{tid}/svPublic（問卷公開版：任何人拿到連結可讀「一份」、不能列出全部，只有老師能寫）和 portal/{tid}/svResp（公開連結的回覆：任何人只能新增一筆，要有名字、答案格式檢查，而且那份問卷必須是開放中；老師讀、改、刪）。其他規則沒改
 //   - 2026-11-18 15:05 新增 portal/{tid}/surveys、svRounds（問卷與發布紀錄，老師專用）和 portal/{tid}/students/{sid}/sv/{rid}（發給學生的問卷：學生只讀自己的；只能改 answers、status、submittedAt，而且只有還沒交時可以改）。其他規則沒改
 //   - 2026-11-16 09:50 新增 billInbox/{uid}/items（生活帳本收件匣：網頁可讀、可刪；寫入只有收件機器人用服務帳戶，不受規則限制）。其他規則沒改
-//   - 2026-11-14 21:00 同步線上現行完整規則：補上 portal/{tid}/...（學生頁與後台，到第十批：測驗結果 placements、老師備註 notes），以及 users/{uid}/zoomNotes、ttMeta、oralHistory、worksheetProjects（規則內容以線上為準，這次只整理檔案）
 // portal/ 底下每一段的說明，另外寫在 diario-de-chino repo 的 moneybook-50481-portal-rules.txt。
 rules_version = '2';
 service cloud.firestore {
@@ -316,6 +316,22 @@ service cloud.firestore {
         && request.resource.data.status in ['todo', 'submitted']
         && request.resource.data.answers is map
         && request.resource.data.answers.size() <= 80;
+    }
+    // 問卷公開連結：svPublic 是老師發公開連結時存的題目（任何人拿到連結可以讀「一份」，不能列出全部；只有老師能寫）。
+    match /portal/{tid}/svPublic/{rid} {
+      allow get: if true;
+      allow list, write: if request.auth != null && request.auth.uid == tid;
+    }
+    // svResp 是公開連結的回覆：任何人只能新增一筆（要有名字、答案格式檢查、那份問卷要是開放中）；老師讀、改（對應學生）、刪。
+    match /portal/{tid}/svResp/{id} {
+      allow read, update, delete: if request.auth != null && request.auth.uid == tid;
+      allow create: if request.resource.data.keys().hasOnly(['rid', 'name', 'answers', 'ts'])
+        && request.resource.data.rid is string && request.resource.data.rid.size() > 0 && request.resource.data.rid.size() <= 60
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.answers is map && request.resource.data.answers.size() <= 80
+        && request.resource.data.ts is number
+        && request.resource.data.ts > request.time.toMillis() - 86400000 && request.resource.data.ts < request.time.toMillis() + 86400000
+        && get(/databases/$(database)/documents/portal/$(tid)/svPublic/$(request.resource.data.rid)).data.open == true;
     }
   }
 }
